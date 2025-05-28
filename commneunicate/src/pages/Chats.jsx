@@ -6,6 +6,13 @@ import {
   onSnapshot,
   orderBy,
   addDoc,
+  getDocs,
+  getDoc,
+  doc,
+  updateDoc,
+  serverTimestamp,
+  limit,
+  startAfter
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import CreateGroup from "./CreateGroup";
@@ -18,28 +25,73 @@ export default function Chats({ userRole }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [userProfiles, setUserProfiles] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [lastVisible, setLastVisible] = useState(null);
 
   const currentUser = auth.currentUser;
 
   useEffect(() => {
     if (!currentUser) return;
 
+    setLoading(true); // Show loading indicator
+
     const q = query(
       collection(db, "chats"),
       where("members", "array-contains", currentUser.uid),
-      orderBy("lastMessage.timestamp", "desc")
+      orderBy("lastMessage.timestamp", "desc"),
+      limit(10) // Load 10 chats initially
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const chatList = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
-      setChats(chatList);
+
+      const userIds = new Set();
+      chatList.forEach((chat) => {
+        chat.members.forEach((uid) => {
+          if (uid !== currentUser.uid) userIds.add(uid);
+        });
+      });
+
+      const userMap = {};
+      for (let uid of userIds) {
+        const userDoc = await getDoc(doc(db, "users", uid));
+        if (userDoc.exists()) userMap[uid] = userDoc.data();
+      }
+
+      setUserProfiles(userMap);
+      setChats(chatList);  // Set chats after loading
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);  // Get last document for pagination
+      setLoading(false);   // Hide loading indicator
     });
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  const loadMoreChats = async () => {
+    if (!lastVisible) return;
+
+    const q = query(
+      collection(db, "chats"),
+      where("members", "array-contains", currentUser.uid),
+      orderBy("lastMessage.timestamp", "desc"),
+      startAfter(lastVisible),
+      limit(10)
+    );
+
+    const snapshot = await getDocs(q);
+    const chatList = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    setChats((prevChats) => [...prevChats, ...chatList]);  // Append new chats
+    setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+  };
 
   useEffect(() => {
     if (!selectedChat) return;
@@ -70,10 +122,6 @@ export default function Chats({ userRole }) {
     setSelectedChat(null);
   };
 
-  const closeCreateGroupPane = () => {
-    setShowCreateGroup(false);
-  };
-
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (newMessage.trim() === "" || !selectedChat) return;
@@ -82,26 +130,84 @@ export default function Chats({ userRole }) {
       await addDoc(collection(db, "chats", selectedChat.id, "messages"), {
         text: newMessage,
         senderId: currentUser.uid,
-        timestamp: new Date(),
+        timestamp: serverTimestamp(),
       });
+
+      const chatDocRef = doc(db, "chats", selectedChat.id);
+      await updateDoc(chatDocRef, {
+        lastMessage: {
+          text: newMessage,
+          timestamp: serverTimestamp(),
+        },
+      });
+
       setNewMessage("");
     } catch (err) {
       console.error("Error sending message:", err);
     }
   };
 
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchTerm.trim()) return;
+
+    const usersRef = collection(db, "users");
+    const snapshot = await getDocs(usersRef);
+
+    const matches = snapshot.docs
+      .filter((doc) => {
+        const data = doc.data();
+        const fullName = `${data.firstName} ${data.lastName}`.toLowerCase();
+        return (
+          fullName.includes(searchTerm.toLowerCase()) ||
+          data.email.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      })
+      .filter((doc) => doc.id !== currentUser.uid);
+
+    setSearchResults(matches);
+  };
+
+  const startPrivateChat = async (targetUid, user) => {
+    const q = query(
+      collection(db, "chats"),
+      where("members", "array-contains", currentUser.uid)
+    );
+    const snapshot = await getDocs(q);
+    const existing = snapshot.docs.find(
+      (doc) => doc.data().members.includes(targetUid) && !doc.data().isGroup
+    );
+
+    if (existing) {
+      setSelectedChat({ id: existing.id, ...existing.data() });
+      setShowSearchModal(false);
+      return;
+    }
+
+    const newChatRef = await addDoc(collection(db, "chats"), {
+      members: [currentUser.uid, targetUid],
+      isGroup: false,
+      lastMessage: { text: "", timestamp: serverTimestamp() },
+    });
+
+    setSelectedChat({
+      id: newChatRef.id,
+      members: [currentUser.uid, targetUid],
+      isGroup: false,
+    });
+    setShowSearchModal(false);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6 flex">
-      {/* Left Pane: Chat List + Search + Create Group */}
-      <div className="w-1/3 bg-white p-4 rounded-lg shadow-lg border border-gray-300 dark:bg-gray-800 dark:border-gray-700 flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-blue-800 dark:text-blue-400">
-            Your Chats
-          </h2>
+    <div className="min-h-screen flex">
+      {/* Left Pane: Chat List */}
+      <div className="w-1/3 p-4 bg-white border-r border-gray-300 dark:bg-gray-900 dark:border-gray-700">
+        <div className="flex justify-between mb-4">
+          <h2 className="text-xl font-bold text-blue-800 dark:text-blue-400">Your Chats</h2>
           {userRole === "professor" && (
             <button
+              className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
               onClick={openCreateGroupPane}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
             >
               + Create Group
             </button>
@@ -110,119 +216,136 @@ export default function Chats({ userRole }) {
 
         <button
           onClick={() => setShowSearchModal(true)}
-          className="mb-4 w-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded px-3 py-2 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+          className="w-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300 px-3 py-2 rounded mb-4 hover:bg-gray-300 dark:hover:bg-gray-600"
         >
           🔍 Search
         </button>
 
         {showSearchModal && (
-          <div className="fixed inset-0 bg-gray-700 bg-opacity-50 flex justify-center items-center z-50">
-            <div className="p-6 rounded-lg shadow-lg max-w-lg w-full border border-gray-300 bg-white dark:bg-gray-800">
-              <h3 className="text-xl font-semibold mb-4 text-blue-700 dark:text-blue-400">
-                Search Chats
-              </h3>
-              <input
-                type="text"
-                placeholder="Search by name"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full p-3 border rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-300"
-              />
-              <div className="flex justify-end space-x-2">
-                <button
-                  onClick={() => setShowSearchModal(false)}
-                  className="px-4 py-2 rounded border border-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    // Implement search filtering here if desired
-                    setShowSearchModal(false);
-                  }}
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                >
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg w-full max-w-md">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold text-blue-700 dark:text-blue-300">
+                  Search Users
+                </h3>
+                <button onClick={() => setShowSearchModal(false)}>✖</button>
+              </div>
+              <form onSubmit={handleSearch} className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Name or email"
+                  className="flex-1 px-3 py-2 rounded border bg-white dark:bg-gray-900 dark:text-white"
+                />
+                <button type="submit" className="bg-blue-600 text-white px-3 py-2 rounded">
                   Search
                 </button>
+              </form>
+              <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
+                {searchResults.map((userDoc) => {
+                  const user = userDoc.data();
+                  return (
+                    <div
+                      key={userDoc.id}
+                      className="flex justify-between items-center p-2 rounded hover:bg-blue-50 dark:hover:bg-gray-700"
+                    >
+                      <div>
+                        <p>{user.firstName} {user.lastName}</p>
+                        <p className="text-xs text-gray-500">{user.email}</p>
+                      </div>
+                      <button
+                        className="text-sm bg-blue-600 text-white px-3 py-1 rounded"
+                        onClick={() => startPrivateChat(userDoc.id, user)}
+                      >
+                        Chat
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
         )}
 
-        <ul className="space-y-4 overflow-y-auto flex-grow max-h-[calc(100vh-150px)]">
-          {chats.length === 0 && <p className="text-gray-600">No chats found.</p>}
-          {chats.map((chat) => (
-            <li
-              key={chat.id}
-              onClick={() => goToChat(chat)}
-              className="bg-white p-4 rounded shadow cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700"
-            >
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-gray-800 dark:text-gray-300">
-                  {chat.isGroup ? chat.name : "Private Chat"}
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {chat.lastMessage?.timestamp?.toDate().toLocaleString() ||
-                    "No messages"}
-                </span>
-              </div>
-              <p className="text-gray-600 mt-1 dark:text-gray-400">
-                {chat.lastMessage?.text || "No messages yet"}
-              </p>
-            </li>
-          ))}
+        <ul className="space-y-2 overflow-y-auto max-h-[calc(100vh-200px)]">
+          {loading && <p>Loading chats...</p>}
+          {chats.length === 0 && !loading && <p>No chats found.</p>}
+          {chats.map((chat) => {
+            const partnerUid = chat.members.find((uid) => uid !== currentUser.uid);
+            const partner = userProfiles[partnerUid] || {};
+            return (
+              <li
+                key={chat.id}
+                onClick={() => goToChat(chat)}
+                className="p-3 bg-gray-100 dark:bg-gray-800 rounded hover:bg-blue-100 dark:hover:bg-gray-700 cursor-pointer"
+              >
+                <div className="flex items-center space-x-3">
+                  <img
+                    src={partner.photoURL || "/default-avatar.png"}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-300">
+                      {partner.firstName} {partner.lastName}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{chat.lastMessage?.text}</p>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
-      {/* Right Pane: Either Chat Messages or Create Group */}
-      <div className="flex-1 bg-white p-6 rounded-lg shadow-lg border border-gray-300 dark:bg-gray-800 dark:border-gray-700 flex flex-col">
-        {showCreateGroup ? (
-          <CreateGroup
-            userRole={userRole}
-            userName={auth.currentUser?.displayName || ""}
-            onGroupCreated={() => {
-              setShowCreateGroup(false);
-              // Optional: refresh chats list here
-            }}
-          />
-        ) : selectedChat ? (
+      {/* Chat Box */}
+      <div className="w-2/3 p-6 bg-gray-50 dark:bg-gray-950 flex flex-col">
+        {showCreateGroup && <CreateGroup currentUser={currentUser} />}
+        {selectedChat && (
           <>
-            <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-400">
-              {selectedChat.name || "Private Chat"}
-            </h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-400">
+                {userProfiles[selectedChat.members.find((uid) => uid !== currentUser.uid)]?.firstName}{" "}
+                {userProfiles[selectedChat.members.find((uid) => uid !== currentUser.uid)]?.lastName}
+              </h2>
+            </div>
 
-            <div className="space-y-4 mt-6 overflow-y-auto flex-grow max-h-[calc(100vh-250px)]">
-              {messages.map((message) => (
-                <div key={message.id} className="flex items-center space-x-2">
-                  <span className="font-medium text-gray-800 dark:text-gray-300">
-                    {message.senderId === currentUser.uid ? "You" : "Other"}
-                  </span>
-                  <p className="text-gray-700 dark:text-gray-300">{message.text}</p>
+            <div className="flex-grow overflow-y-auto mb-4 p-3 bg-white dark:bg-gray-900 rounded shadow">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`mb-2 ${msg.senderId === currentUser.uid ? "text-right" : "text-left"}`}
+                >
+                  <div
+                    className={`inline-block px-3 py-2 rounded text-sm ${
+                      msg.senderId === currentUser.uid
+                        ? "bg-blue-200 dark:bg-blue-700 text-black dark:text-white"
+                        : "bg-gray-200 dark:bg-gray-600 text-black dark:text-white"
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
                 </div>
               ))}
             </div>
 
-            <form onSubmit={handleSendMessage} className="mt-6 flex space-x-2">
+            <form onSubmit={handleSendMessage} className="flex space-x-2">
               <input
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                className="flex-grow p-3 border rounded"
                 placeholder="Type a message..."
+                className="flex-grow p-2 rounded border bg-white dark:bg-gray-800 dark:text-white"
               />
               <button
                 type="submit"
-                className="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
               >
                 Send
               </button>
             </form>
           </>
-        ) : (
-          <p className="text-gray-600 dark:text-gray-400">
-            Select a chat to view messages or create a group.
-          </p>
         )}
       </div>
     </div>

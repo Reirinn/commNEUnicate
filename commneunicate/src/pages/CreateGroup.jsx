@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import { collection, getDocs, addDoc, serverTimestamp, query, where } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
-export default function CreateGroup({ userRole, userName, userSubjects = [], userSection = "", onGroupCreated }) {
+const CreateGroup = ({ userRole, userName, userSubjects = [], userSection = "", onGroupCreated }) => {
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState([]);
   const [groupName, setGroupName] = useState("");
+  const [showCreateGroup, setShowCreateGroup] = useState(true);  // Use state to control modal visibility
   const currentUser = auth.currentUser;
 
   useEffect(() => {
@@ -66,8 +67,8 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
         lastMessage: {
           sender: "",
           text: "Group created.",
-          timestamp: serverTimestamp()
-        }
+          timestamp: serverTimestamp(),
+        },
       };
 
       const docRef = await addDoc(collection(db, "chats"), newGroup);
@@ -76,11 +77,18 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
       setGroupName("");
       setSelected([]);
       if (onGroupCreated) onGroupCreated(docRef.id);
+      setShowCreateGroup(false);  // Close the modal after group creation
     } catch (err) {
       console.error("Error creating group:", err);
       alert("Failed to create group.");
     }
   };
+
+  const handleCancel = () => {
+    setShowCreateGroup(false);  // Close the modal when Cancel is clicked
+  };
+
+  if (!showCreateGroup) return null; // Return null to hide the modal when it's canceled
 
   return (
     <div className="min-h-full flex flex-col justify-center items-center p-6 bg-white dark:bg-gray-900">
@@ -117,7 +125,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
               }`}
             >
               <span>
-                {user.firstName} {user.lastName} ({user.role})
+                {user.firstName} {user.lastName}
               </span>
               <span className="text-sm font-semibold">
                 {selected.includes(user.id) ? "✓ Selected" : ""}
@@ -126,14 +134,24 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
           ))}
         </ul>
 
-        <button
-          onClick={handleCreateGroup}
-          className="mt-6 bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 w-full"
-          disabled={!groupName.trim() || selected.length === 0}
-        >
-          Create Group
-        </button>
+        <div className="flex justify-between mt-6">
+          <button
+            onClick={handleCancel}  // Attach the cancel button to close modal
+            className="bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500 w-full"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreateGroup}
+            className="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 w-full ml-4"
+            disabled={!groupName.trim() || selected.length === 0}
+          >
+            Create Group
+          </button>
+        </div>
       </div>
     </div>
   );
-}
+};
+
+export default CreateGroup;
