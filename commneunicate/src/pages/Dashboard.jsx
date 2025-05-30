@@ -8,16 +8,16 @@ import {
 } from "react-icons/fa";
 import { MdEmojiPeople, MdStars, MdMood } from "react-icons/md";
 import { db, auth } from "../firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 
-// Import your components for right pane pages
 import Chats from "./Chats";
 import Notifications from "./Notifications";
 import MeetingsPage from "./MeetingsPage";
 import Attendance from "./Attendance";
 import CreateGroup from "./CreateGroup";
+import JitsiMeeting from "./JitsiMeeting";
 
 export default function Dashboard({ darkMode, toggleDarkMode }) {
   const [userRole, setUserRole] = useState("");
@@ -26,13 +26,11 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
   const [email, setEmail] = useState("");
   const [activePane, setActivePane] = useState("welcome");
   const [loading, setLoading] = useState(true);
-
-  // For CreateGroup display toggle inside Chats pane
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
-
-  // For demo purpose: userSubjects and userSection - you can fetch/set this properly
   const [userSubjects, setUserSubjects] = useState([]);
   const [userSection, setUserSection] = useState("");
+  const [selectedRoomName, setSelectedRoomName] = useState(null);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   const navigate = useNavigate();
 
@@ -48,9 +46,8 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
           setUserRole(data.role);
           setUserName(data.firstName);
           setPhotoURL(data.photoURL);
-          // Set userSubjects and userSection if available for CreateGroup filtering
           setUserSubjects(data.subjects || []);
-          setUserSection(data.section || "");
+          setUserSection(data.yearAndSection || "");
         } else {
           console.warn("User document not found");
           setUserRole("");
@@ -66,6 +63,23 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
     return () => unsubscribe();
   }, [navigate]);
 
+  // Listen for unread notifications count in real-time
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, "notifications"),
+      where("recipientId", "==", auth.currentUser.uid),
+      where("read", "==", false)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUnreadNotifCount(snapshot.size);
+    });
+
+    return () => unsubscribe();
+  }, [userRole]);
+
   if (loading) {
     return (
       <div
@@ -80,14 +94,29 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
 
   const avatarSrc = photoURL || auth.currentUser?.photoURL || null;
 
-  // Callback when group created: close CreateGroup pane and maybe refresh Chats
   const handleGroupCreated = (newGroupId) => {
     setIsCreatingGroup(false);
     setActivePane("chats");
-    // optionally you can pass newGroupId to Chats component for opening the new chat
+  };
+
+  const handleSelectMeeting = (roomName) => {
+    setSelectedRoomName(roomName);
+    setActivePane("meetingEmbed");
+    setIsCreatingGroup(false);
   };
 
   const renderContent = () => {
+    if (activePane === "meetingEmbed" && selectedRoomName) {
+      return (
+        <JitsiMeeting
+          roomName={selectedRoomName}
+          userName={userName}
+          userEmail={email}
+          darkMode={darkMode}
+        />
+      );
+    }
+
     switch (activePane) {
       case "chats":
         return isCreatingGroup ? (
@@ -97,22 +126,34 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
             userSubjects={userSubjects}
             userSection={userSection}
             onGroupCreated={handleGroupCreated}
+            darkMode={darkMode}
           />
         ) : (
           <Chats
             userRole={userRole}
             onCreateGroupClick={() => setIsCreatingGroup(true)}
+            darkMode={darkMode}
           />
         );
 
       case "notifications":
-        return <Notifications />;
+        return <Notifications darkMode={darkMode} />;
 
       case "meetings":
-        return <MeetingsPage userRole={userRole} userName={userName} />;
+        return (
+          <MeetingsPage
+            userRole={userRole}
+            userName={userName}
+            photoURL={photoURL}
+            darkMode={darkMode}
+            onSelectMeeting={handleSelectMeeting}
+            userSubjects={userSubjects}
+            userSection={userSection}
+          />
+        );
 
       case "attendance":
-        return <Attendance />;
+        return <Attendance darkMode={darkMode} />;
 
       default:
         return (
@@ -157,10 +198,17 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
     }
   };
 
-  const sidebarBtnClasses = (pane) =>
-    `flex items-center space-x-4 p-4 rounded cursor-pointer transition-colors duration-200 hover:bg-blue-100 ${
+  const sidebarBtnClasses = (pane) => {
+    let base = `flex items-center space-x-4 p-4 rounded cursor-pointer transition-colors duration-200 hover:bg-blue-100 ${
       activePane === pane ? "bg-blue-200 font-semibold shadow" : ""
-    }`;
+    } ${darkMode ? "hover:bg-blue-900" : ""}`;
+
+    if (pane === "notifications" && unreadNotifCount > 0) {
+      base += " bg-yellow-100 dark:bg-yellow-700";
+    }
+
+    return base;
+  };
 
   return (
     <div
@@ -196,7 +244,6 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
             />
           )}
           <div className="flex items-center">
-            {/* Lighter color for dark mode */}
             <p
               className={`font-semibold ${
                 darkMode ? "text-gray-300" : "text-gray-700"
@@ -212,6 +259,7 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
           onClick={() => {
             setActivePane("chats");
             setIsCreatingGroup(false);
+            setSelectedRoomName(null);
           }}
           className={sidebarBtnClasses("chats")}
           aria-label="Chats"
@@ -224,18 +272,25 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
           onClick={() => {
             setActivePane("notifications");
             setIsCreatingGroup(false);
+            setSelectedRoomName(null);
           }}
           className={sidebarBtnClasses("notifications")}
           aria-label="Notifications"
         >
           <FaBell className="text-3xl text-yellow-500" />
           <span className="text-lg select-none">Notifications</span>
+          {unreadNotifCount > 0 && (
+            <span className="ml-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-100 bg-red-600 rounded-full">
+              {unreadNotifCount}
+            </span>
+          )}
         </button>
 
         <button
           onClick={() => {
             setActivePane("meetings");
             setIsCreatingGroup(false);
+            setSelectedRoomName(null);
           }}
           className={sidebarBtnClasses("meetings")}
           aria-label="Meetings"
@@ -244,17 +299,20 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
           <span className="text-lg select-none">Meetings</span>
         </button>
 
-        <button
-          onClick={() => {
-            setActivePane("attendance");
-            setIsCreatingGroup(false);
-          }}
-          className={sidebarBtnClasses("attendance")}
-          aria-label="Attendance Logs"
-        >
-          <FaUsers className="text-3xl text-purple-600" />
-          <span className="text-lg select-none">Attendance</span>
-        </button>
+        {userRole === "professor" && (
+          <button
+            onClick={() => {
+              setActivePane("attendance");
+              setIsCreatingGroup(false);
+              setSelectedRoomName(null);
+            }}
+            className={sidebarBtnClasses("attendance")}
+            aria-label="Attendance Logs"
+          >
+            <FaUsers className="text-3xl text-purple-600" />
+            <span className="text-lg select-none">Attendance</span>
+          </button>
+        )}
 
         {/* Spacer */}
         <div className="flex-grow" />
@@ -283,7 +341,7 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
                 darkMode ? "translate-x-6" : "translate-x-0"
               }`}
             >
-              {darkMode ? <span className="text-gray-800">🌙</span> : <span>☀️</span>}
+              {darkMode ? "🌙" : "☀️"}
             </div>
           </div>
         </div>

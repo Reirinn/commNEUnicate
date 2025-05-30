@@ -3,94 +3,87 @@ import { auth, db } from "../firebase";
 import {
   collection,
   addDoc,
-  getDocs,
   query,
-  where,
   serverTimestamp,
+  doc,
+  deleteDoc,
+  orderBy,
+  onSnapshot,
 } from "firebase/firestore";
+import { FaTrash } from "react-icons/fa";
+
+const sectionOptions = ["4BSCS-1", "4BSCS-2"];
 
 export default function MeetingsPage({
   userRole,
   userName,
-  photoURL,
-  darkMode, // For styling from parent
-  onSelectMeeting, // Function to call on Join click to open Jitsi in Dashboard right pane
+  darkMode,
+  onSelectMeeting,
+  userSubjects = [],
+  userSection = "",
 }) {
   const [meetings, setMeetings] = useState([]);
   const [showForm, setShowForm] = useState(false);
-
-  // Form states
   const [subject, setSubject] = useState("");
   const [section, setSection] = useState("");
   const [schedule, setSchedule] = useState("");
-
-  // Sample subjects & sections
-  const subjectOptions = [
-    "Introduction to Programming",
-    "Data Analytics",
-    "Data Structures and Algorithms",
-    "Human-Computer Interaction",
-    "Application Development",
-  ];
-  const sectionOptions = ["4BSCS-1", "4BSCS-2"];
-
-  // Fetch meetings filtered by user role and subjects/section
-  const fetchMeetings = async () => {
-    try {
-      const q = query(collection(db, "meetings"));
-      const querySnapshot = await getDocs(q);
-      let allMeetings = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      if (userRole === "professor") {
-        // Only meetings created by this professor
-        allMeetings = allMeetings.filter(
-          (m) => m.createdByUid === auth.currentUser.uid
-        );
-      } else {
-        // Student: filter by subjects and section
-        // TODO: Fetch actual student subjects & section dynamically
-        const userSubjects = userRole === "student" ? ["English", "Math"] : [];
-        const userSection = userRole === "student" ? "4BSCS-1" : "";
-
-        allMeetings = allMeetings.filter(
-          (m) =>
-            userSubjects.includes(m.subject) &&
-            (m.section === userSection || m.section === "")
-        );
-      }
-
-      setMeetings(allMeetings);
-    } catch (err) {
-      console.error("Error fetching meetings:", err);
-    }
-  };
+  const currentUser = auth.currentUser;
 
   useEffect(() => {
-    fetchMeetings();
-  }, []);
+    if (!currentUser) return;
 
-  // Generate unique Jitsi room name
-  const generateJitsiRoomName = (subject, section) =>
-    `${subject}-${section}-${Math.random().toString(36).substring(2, 8)}`;
+    const q = query(collection(db, "meetings"), orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        let allMeetings = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        if (userRole === "professor") {
+          allMeetings = allMeetings.filter(
+            (m) => m.createdByUid === currentUser.uid
+          );
+        } else if (userRole === "student") {
+          allMeetings = allMeetings.filter(
+            (m) => userSubjects.includes(m.subject) && m.section === userSection
+          );
+        }
+
+        setMeetings(allMeetings);
+      },
+      (error) => {
+        console.error("Error listening to meetings:", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUser, userRole, userSubjects, userSection]);
+
+  const generateJitsiRoomName = (subject, section) => {
+    const cleanSubject = subject.replace(/\s+/g, "").toLowerCase();
+    const cleanSection = section.replace(/\s+/g, "").toLowerCase();
+    return `${cleanSubject}-${cleanSection}-${Math.random()
+      .toString(36)
+      .substring(2, 8)}`;
+  };
 
   const handleCreateMeeting = async (e) => {
     e.preventDefault();
     if (!subject || !section || !schedule) return;
 
     const roomName = generateJitsiRoomName(subject, section);
-    const meetingLink = `https://meet.jit.si/${roomName}`;
 
     try {
       await addDoc(collection(db, "meetings"), {
         subject,
         section,
         schedule,
-        meetingLink,
+        meetingLink: `https://meet.jit.si/${roomName}`,
         roomName,
-        createdByUid: auth.currentUser.uid,
+        createdByUid: currentUser.uid,
         createdByName: userName,
         createdAt: serverTimestamp(),
       });
@@ -99,62 +92,74 @@ export default function MeetingsPage({
       setSection("");
       setSchedule("");
       setShowForm(false);
-      fetchMeetings();
     } catch (err) {
       console.error("Error creating meeting:", err);
     }
   };
 
-  // On join, call parent's onSelectMeeting with roomName to embed meeting
   const handleJoin = (roomName) => {
     if (onSelectMeeting) {
       onSelectMeeting(roomName);
     } else {
-      // fallback: open in new tab
       window.open(`https://meet.jit.si/${roomName}`, "_blank");
     }
   };
 
+  const handleDeleteMeeting = async (meetingId) => {
+    try {
+      await deleteDoc(doc(db, "meetings", meetingId));
+    } catch (error) {
+      console.error("Error deleting meeting:", error);
+    }
+  };
+
+  // Styles for light/dark mode
+  const bgClass = darkMode ? "bg-gray-900 text-white" : "bg-gray-50 text-black";
+  const tableBgClass = darkMode ? "bg-gray-800" : "bg-white";
+  const borderColor = darkMode ? "border-gray-700" : "border-gray-300";
+  const hoverBgClass = darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100";
+  const buttonJoinClass =
+    "bg-green-600 text-white px-4 py-1 rounded hover:bg-green-700";
+  const buttonDeleteClass =
+    "bg-red-600 text-white px-4 py-1 rounded hover:bg-red-700 ml-6";
+  const createBtnClass = darkMode
+    ? "bg-blue-700 text-white hover:bg-blue-800"
+    : "bg-blue-600 text-white hover:bg-blue-700";
+
+  // Modal styles with dark mode
+  const modalBgClass = darkMode ? "bg-gray-800 text-white" : "bg-white text-black";
+  const modalInputClass = darkMode
+    ? "bg-gray-700 text-white border border-gray-600 placeholder-gray-400 p-3 rounded w-full mb-4"
+    : "bg-white text-black border border-gray-300 placeholder-gray-600 p-3 rounded w-full mb-4";
+
+  const modalButtonCancelClass = darkMode
+    ? "px-4 py-2 rounded border border-gray-600 hover:bg-gray-700"
+    : "px-4 py-2 rounded border border-gray-300 hover:bg-gray-100";
+
+  const modalButtonSubmitClass = darkMode
+    ? "bg-blue-700 hover:bg-blue-800 text-white px-6 py-3 rounded"
+    : "bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded";
+
   return (
-    <div
-      className={`min-h-screen p-6 transition-colors duration-300 ${
-        darkMode ? "bg-gray-900 text-white" : "bg-gray-50 text-black"
-      }`}
-    >
+    <div className={`min-h-screen p-6 transition-colors duration-300 ${bgClass}`}>
       <h1 className="text-3xl font-bold mb-6 text-center text-blue-700 dark:text-blue-400">
         Meetings
       </h1>
 
-      {/* Meeting Table */}
       <div className="overflow-x-auto">
-        <table
-          className={`min-w-full rounded shadow ${
-            darkMode ? "bg-gray-800" : "bg-white"
-          }`}
-        >
+        <table className={`min-w-full rounded shadow ${tableBgClass}`}>
           <thead>
-            <tr
-              className={`text-left border-b ${
-                darkMode ? "border-gray-700" : "border-gray-300"
-              }`}
-            >
+            <tr className={`text-left border-b ${borderColor}`}>
               <th className="p-3">Subject</th>
-              {userRole === "professor" ? (
-                <th className="p-3">Section</th>
-              ) : (
-                <th className="p-3">Professor</th>
-              )}
+              <th className="p-3">{userRole === "professor" ? "Section" : "Professor"}</th>
               <th className="p-3">Schedule</th>
-              <th className="p-3 text-center"></th>
+              <th className="p-3 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
             {meetings.length === 0 ? (
               <tr>
-                <td
-                  colSpan={4}
-                  className="text-center p-4 text-gray-600 dark:text-gray-400"
-                >
+                <td colSpan={4} className="text-center p-4 text-gray-600 dark:text-gray-400">
                   No meetings to show.
                 </td>
               </tr>
@@ -162,22 +167,24 @@ export default function MeetingsPage({
               meetings.map((m) => (
                 <tr
                   key={m.id}
-                  className={`border-b ${
-                    darkMode ? "border-gray-700" : "border-gray-300"
-                  } hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer`}
+                  className={`border-b ${borderColor} ${hoverBgClass} cursor-pointer`}
                 >
                   <td className="p-3">{m.subject}</td>
-                  <td className="p-3">
-                    {userRole === "professor" ? m.section : m.createdByName}
-                  </td>
+                  <td className="p-3">{userRole === "professor" ? m.section : m.createdByName}</td>
                   <td className="p-3">{m.schedule}</td>
-                  <td className="p-3 text-center">
-                    <button
-                      onClick={() => handleJoin(m.roomName)}
-                      className="bg-green-600 text-white px-4 py-1 rounded hover:bg-green-700"
-                    >
+                  <td className="p-3 text-center space-x-2">
+                    <button onClick={() => handleJoin(m.roomName)} className={buttonJoinClass}>
                       Join
                     </button>
+                    {userRole === "professor" && (
+                      <button
+                        onClick={() => handleDeleteMeeting(m.id)}
+                        className={buttonDeleteClass}
+                        title="Delete Meeting"
+                      >
+                        <FaTrash />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -186,21 +193,17 @@ export default function MeetingsPage({
         </table>
       </div>
 
-      {/* Create Meeting button and form for Professors */}
       {userRole === "professor" && (
         <div className="fixed bottom-8 right-8">
           {!showForm ? (
             <button
               onClick={() => setShowForm(true)}
-              className="bg-blue-600 text-white px-6 py-3 rounded-full shadow hover:bg-blue-700 transition"
+              className={`px-6 py-3 rounded-full shadow hover:shadow-lg transition ${createBtnClass}`}
             >
               + Create Meeting
             </button>
           ) : (
-            <form
-              onSubmit={handleCreateMeeting}
-              className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg max-w-sm space-y-4"
-            >
+            <form onSubmit={handleCreateMeeting} className={`p-6 rounded shadow-lg max-w-sm space-y-4 ${modalBgClass}`}>
               <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-400">
                 Create New Meeting
               </h2>
@@ -209,10 +212,10 @@ export default function MeetingsPage({
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 required
-                className="w-full p-3 border rounded"
+                className={modalInputClass}
               >
                 <option value="">Select Subject</option>
-                {subjectOptions.map((subj) => (
+                {userSubjects.map((subj) => (
                   <option key={subj} value={subj}>
                     {subj}
                   </option>
@@ -223,7 +226,7 @@ export default function MeetingsPage({
                 value={section}
                 onChange={(e) => setSection(e.target.value)}
                 required
-                className="w-full p-3 border rounded"
+                className={modalInputClass}
               >
                 <option value="">Select Section</option>
                 {sectionOptions.map((sec) => (
@@ -239,21 +242,18 @@ export default function MeetingsPage({
                 value={schedule}
                 onChange={(e) => setSchedule(e.target.value)}
                 required
-                className="w-full p-3 border rounded"
+                className={modalInputClass}
               />
 
               <div className="flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="px-4 py-2 rounded border border-gray-400 hover:bg-gray-100"
+                  className={modalButtonCancelClass}
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                >
+                <button type="submit" className={modalButtonSubmitClass}>
                   Create
                 </button>
               </div>

@@ -17,11 +17,14 @@ export default function HomePage({ darkMode, toggleDarkMode }) {
       const result = await signInWithPopup(auth, provider);
       const loggedUser = result.user;
 
+      // Temporarily disable institutional email restriction for testing
+      /*
       if (!loggedUser.email.endsWith("@neu.edu.ph")) {
         alert("Only institutional @neu.edu.ph emails are allowed.");
         await auth.signOut();
         return;
       }
+      */
 
       const userDocRef = doc(db, "users", loggedUser.uid);
       const userDoc = await getDoc(userDocRef);
