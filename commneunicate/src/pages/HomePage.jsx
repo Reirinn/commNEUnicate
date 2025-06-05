@@ -48,10 +48,10 @@ export default function HomePage({ darkMode, toggleDarkMode }) {
   };
 
   useEffect(() => {
-    if (user && mode === "login") {
-      navigate("/face-login");
-    }
-  }, [user, mode, navigate]);
+  if (user && mode === "login") {
+    navigate("/face-login", { state: { userId: user.uid, userEmail: user.email, darkMode } }); // Pass userEmail as well
+  }
+  }, [user, mode, navigate, darkMode]);
 
   if (user && mode === "signup") {
     return <SignUpForm user={user} role={role} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />;

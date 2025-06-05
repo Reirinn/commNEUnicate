@@ -68,51 +68,51 @@ export default function SignUpForm({ user, role, darkMode, toggleDarkMode }) {
     return true;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+ const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    if (!validateForm()) return;
+  if (!validateForm()) return;
 
-    try {
-      const userDocRef = doc(db, "users", user.uid);
-      const userData = {
-        uid: user.uid,
-        email: user.email,
-        photoURL: user.photoURL,
-        role,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        createdAt: serverTimestamp(),
-        department: formData.department,
-        ...(role === "student" && {
-          studentId: formData.studentId,
-          yearAndSection: formData.yearAndSection,
-          numberOfSubjects: parseInt(formData.numberOfSubjects, 10),
-          subjects: formData.subjects,
-        }),
-        ...(role === "professor" && {
-          professorId: formData.professorId,
-          numberOfSubjects: parseInt(formData.numberOfSubjects, 10),
-          subjects: formData.subjects,
-        }),
-      };
+  try {
+    const userDocRef = doc(db, "users", user.uid);
+    const userData = {
+      uid: user.uid,
+      email: user.email,
+      photoURL: user.photoURL,
+      role,
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      createdAt: serverTimestamp(),
+      department: formData.department,
+      ...(role === "student" && {
+        studentId: formData.studentId,
+        yearAndSection: formData.yearAndSection,
+        numberOfSubjects: parseInt(formData.numberOfSubjects, 10),
+        subjects: formData.subjects,
+      }),
+      ...(role === "professor" && {
+        professorId: formData.professorId,
+        numberOfSubjects: parseInt(formData.numberOfSubjects, 10),
+        subjects: formData.subjects,
+      }),
+    };
 
-      await setDoc(userDocRef, userData);
-      setRegistered(true);
-      alert("Account successfully created! Proceed to facial registration.");
-      navigate("/face-registration");
-    } catch (error) {
-      console.error("Error writing document:", error);
-      alert("Error saving data");
-    }
-  };
+    await setDoc(userDocRef, userData);
+    setRegistered(true);
+    alert("Account successfully created! Proceed to facial registration.");
+    navigate("/face-registration", { state: { user } }); // Pass user as state
+  } catch (error) {
+    
+  }
+};
+
 
   const subjectCount = parseInt(formData.numberOfSubjects, 10);
 
   if (registered)
     return (
       <FaceRegistration
-        user={user}
+        user={user} // passing user info to FaceRegistration.jsx
         darkMode={darkMode}
         toggleDarkMode={toggleDarkMode}
       />
@@ -143,10 +143,6 @@ export default function SignUpForm({ user, role, darkMode, toggleDarkMode }) {
         <div
           className="absolute top-4 right-4 relative w-14 h-8 flex items-center bg-gray-300 rounded-full p-1 cursor-pointer"
           onClick={toggleDarkMode}
-          role="button"
-          aria-label="Toggle dark mode"
-          tabIndex={0}
-          onKeyPress={(e) => e.key === "Enter" && toggleDarkMode()}
         >
           <div
             className={`bg-white w-6 h-6 rounded-full shadow-md transform duration-300 ease-in-out flex items-center justify-center text-xs ${
