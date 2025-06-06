@@ -33,11 +33,9 @@ export default function SignUpForm({ user, role, darkMode, toggleDarkMode }) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
 
-    // Clear warning if subjects changed or numberOfSubjects changed
     if (name === "numberOfSubjects" || name === "subjects") setWarning("");
   };
 
-  // Checkbox handler for subjects
   const handleSubjectCheckboxChange = (e) => {
     const { value, checked } = e.target;
     setFormData((prev) => {
@@ -53,7 +51,7 @@ export default function SignUpForm({ user, role, darkMode, toggleDarkMode }) {
   };
 
   const validateForm = () => {
-    // Check if numberOfSubjects is valid number between 1 and 5
+    
     const numSubjects = parseInt(formData.numberOfSubjects, 10);
     if (!numSubjects || numSubjects < 1 || numSubjects > 5) {
       setWarning("Please enter a number of subjects between 1 and 5.");
@@ -100,7 +98,7 @@ export default function SignUpForm({ user, role, darkMode, toggleDarkMode }) {
     await setDoc(userDocRef, userData);
     setRegistered(true);
     alert("Account successfully created! Proceed to facial registration.");
-    navigate("/face-registration", { state: { user } }); // Pass user as state
+    navigate("/face-registration", { state: { user } }); 
   } catch (error) {
     
   }
@@ -112,7 +110,7 @@ export default function SignUpForm({ user, role, darkMode, toggleDarkMode }) {
   if (registered)
     return (
       <FaceRegistration
-        user={user} // passing user info to FaceRegistration.jsx
+        user={user} 
         darkMode={darkMode}
         toggleDarkMode={toggleDarkMode}
       />

@@ -63,7 +63,7 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
     return () => unsubscribe();
   }, [navigate]);
 
-  // Listen for unread notifications count in real-time
+  
   useEffect(() => {
     if (!auth.currentUser) return;
 
@@ -112,7 +112,9 @@ export default function Dashboard({ darkMode, toggleDarkMode }) {
           roomName={selectedRoomName}
           userName={userName}
           userEmail={email}
+          userRole={userRole}
           darkMode={darkMode}
+        
         />
       );
     }

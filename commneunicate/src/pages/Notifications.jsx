@@ -33,7 +33,7 @@ export default function Notifications({ darkMode }) {
 
   const currentUser = auth.currentUser;
 
-  // Fetch user role and professor subjects if professor
+  
   useEffect(() => {
     const fetchUserRoleAndSubjects = async () => {
       if (!currentUser) return;
@@ -51,7 +51,7 @@ export default function Notifications({ darkMode }) {
     fetchUserRoleAndSubjects();
   }, [currentUser]);
 
-  // Fetch notifications for current user
+  
   useEffect(() => {
     if (!currentUser || !currentUserRole) return;
     setLoading(true);
@@ -68,7 +68,7 @@ export default function Notifications({ darkMode }) {
         setNotifications(docs);
         setUnreadCount(docs.filter((n) => !n.read).length);
 
-        // Fetch all senders' names to display for students
+      
         const senderIds = [...new Set(docs.map((n) => n.senderId).filter((id) => id))];
         senderIds.forEach(async (uid) => {
           if (!senderNames[uid]) {
@@ -91,7 +91,7 @@ export default function Notifications({ darkMode }) {
     return () => unsubscribe();
   }, [currentUser, currentUserRole, senderNames]);
 
-  // Mark notification as read after closing modal
+  
   const markAsRead = async (notifId) => {
     const notifDoc = doc(db, "notifications", notifId);
     try {
@@ -101,13 +101,13 @@ export default function Notifications({ darkMode }) {
     }
   };
 
-  // Handle form input changes
+  
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Handle notify button - send announcement
+  
   const handleNotifyClick = async (e) => {
     e.preventDefault();
 
@@ -147,7 +147,6 @@ export default function Notifications({ darkMode }) {
         });
       });
 
-      // Also save a copy for professor's record (with recipient section)
       const professorNotifRef = doc(collection(db, "notifications"));
       batch.set(professorNotifRef, {
         recipientId: currentUser.uid,
@@ -170,7 +169,6 @@ export default function Notifications({ darkMode }) {
     }
   };
 
-  // Styling classes based on dark mode
   const bgClass = darkMode ? "bg-gray-900 text-white" : "bg-gray-100 text-black";
   const paneBgClass = darkMode ? "bg-gray-800" : "bg-white";
   const inputClass = darkMode

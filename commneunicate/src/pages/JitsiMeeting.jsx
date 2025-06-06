@@ -1,143 +1,241 @@
 import React, { useEffect, useRef, useState } from "react";
+import { db } from "../firebase";
+import {
+  collection,
+  addDoc,
+  doc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import axios from "axios";
 
 export default function JitsiMeeting({ roomName, userName, userEmail, userRole }) {
-  const jitsiContainerRef = useRef(null);
-  const apiRef = useRef(null);
-  const [attendance, setAttendance] = useState([]);
-  const [meetingStarted, setMeetingStarted] = useState(false); // Track if professor has joined
-  const [trackingStatus, setTrackingStatus] = useState(""); // State to show tracking status message
-  const [isMeetingEnded, setIsMeetingEnded] = useState(false); // Track if meeting is ended
+  const jitsiRef = useRef(null);
+  const [tracking, setTracking] = useState(false);
+  const [intervalId, setIntervalId] = useState(null);
+  const [trackingMessage, setTrackingMessage] = useState("");
+  const sessionIdRef = useRef(null); 
 
-  const recognizedUsers = {
-    "joe.dominguez@neu.edu.ph": "Dominguezz",
-    "johnjohan.sanjuan@neu.edu.ph": "Johan",
-    "rayleenrae.bitoon@neu.edu.ph": "Rayleen",
-    "rylanbitoon53@gmail.com": "Rhys"
-  };
-
-  // Function to send video feed to Flask server for facial recognition
-  const sendVideoToFlask = (videoElement) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = videoElement.videoWidth;
-    canvas.height = videoElement.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-
-    // Convert canvas image to base64
-    const imageBase64 = canvas.toDataURL("image/jpeg");
-
-    // Send image to Flask for recognition
-    axios
-      .post("http://localhost:5000/verify-face", { image: imageBase64 })
-      .then((response) => {
-        const { verified, name, message } = response.data;
-        const timestamp = new Date().toISOString();
-
-        if (verified) {
-          setAttendance((prev) => [
-            ...prev,
-            { name, email: userEmail, timestamp, status: "Present" },
-          ]);
-        } else {
-          setAttendance((prev) => [
-            ...prev,
-            { name: message, email: userEmail, timestamp, status: "Not Recognized" },
-          ]);
-        }
-      })
-      .catch((error) => {
-        console.error("Error during face recognition:", error);
-      });
-  };
-
-  // Start the facial recognition process
-  const startFacialRecognition = () => {
-    if (apiRef.current) {
-      const participants = apiRef.current.getParticipantsInfo(); // Get participants info
-      participants.forEach((participant) => {
-        // Skip the professor
-        if (participant.role !== "professor") {
-          const videoElement = apiRef.current.getParticipantVideoElement(participant.id);
-
-          if (videoElement) {
-            sendVideoToFlask(videoElement);
-          }
-        }
-      });
-    }
-  };
+  
+  const knownEmails = new Set([
+    "joe.dominguez@neu.edu.ph",
+    "johnjohan.sanjuan@neu.edu.ph",
+    "rayleenrae.bitoon@neu.edu.ph",
+    "rylanbitoon53@gmail.com",
+  ]);
 
   useEffect(() => {
-    if (!roomName) return;
-
-    // Check if Jitsi Meet API is available
-    if (!window.JitsiMeetExternalAPI) {
-      console.error("JitsiMeetExternalAPI not loaded");
-      return;
-    }
+    if (!roomName || !userName || !userEmail || !userRole) return;
 
     const domain = "meet.jit.si";
     const options = {
-      roomName: roomName.replace(/\s/g, ""),
-      parentNode: jitsiContainerRef.current,
-      width: "100%",
-      height: "100%",
-      userInfo: { displayName: userName, email: userEmail },
-      interfaceConfigOverwrite: { SHOW_JITSI_WATERMARK: false },
-      configOverwrite: { startWithAudioMuted: true, startWithVideoMuted: true },
+      roomName,
+      parentNode: jitsiRef.current,
+      userInfo: {
+        displayName: userName,
+      },
+      configOverwrite: {
+        disableDeepLinking: true,
+      },
+      interfaceConfigOverwrite: {
+        SHOW_JITSI_WATERMARK: false,
+        SHOW_WATERMARK_FOR_GUESTS: false,
+        TOOLBAR_BUTTONS: ["microphone", "camera", "chat", "raisehand", "hangup"],
+      },
     };
 
-    // Initialize Jitsi meeting
-    apiRef.current = new window.JitsiMeetExternalAPI(domain, options);
+    const api = new window.JitsiMeetExternalAPI(domain, options);
 
-    apiRef.current.addEventListener("videoConferenceJoined", () => {
-      if (userRole === "professor") {
-        setMeetingStarted(true);
-        setTrackingStatus("Tracking attendance..."); // Show tracking message when professor joins
-        // Start facial recognition for students every 2 minutes
-        const interval = setInterval(() => {
-          startFacialRecognition(); // Start facial recognition for all students
-        }, 120000);  // 2 minutes in milliseconds
-
-        // Clear the interval when the component unmounts
-        return () => clearInterval(interval);
-      }
-    });
-
-    // Monitor when the professor ends the call (meeting ends)
-    apiRef.current.addEventListener("videoConferenceLeft", () => {
-      if (userRole === "professor") {
-        setIsMeetingEnded(true); // Mark meeting as ended
-        setTrackingStatus("Please proceed to the attendance tab to get attendance records.");
+    api.addEventListener("videoConferenceJoined", () => {
+      console.log("Joined room:", roomName);
+      if (userRole === "student") {
+        console.log("🔍 Student joined — attendance tracking will begin.");
+        createSessionAndStartTracking();
+      } else {
+        console.log("👨‍🏫 Professor joined — no tracking.");
       }
     });
 
     return () => {
-      if (apiRef.current) {
-        apiRef.current.dispose();
-      }
+      api.dispose();
+      stopAutoTracking();
     };
   }, [roomName, userName, userEmail, userRole]);
 
+  const createSessionDoc = async () => {
+    try {
+      const sessionsRef = collection(db, "attendance", roomName, "sessions");
+      const sessionDocRef = await addDoc(sessionsRef, {
+        createdAt: serverTimestamp(),
+      });
+      console.log("Created session doc:", sessionDocRef.id);
+      return sessionDocRef.id;
+    } catch (error) {
+      console.error("Failed to create session doc:", error);
+      return null;
+    }
+  };
+
+  const createSessionAndStartTracking = async () => {
+    const id = await createSessionDoc();
+    if (!id) {
+      console.error("Could not create session, aborting tracking");
+      return;
+    }
+    sessionIdRef.current = id;
+    startAutoTracking();
+  };
+
+  const startAutoTracking = () => {
+    if (intervalId) {
+      console.log("Tracking already running");
+      return;
+    }
+
+    setTracking(true);
+    setTrackingMessage("📸 Attendance Tracking in progress...");
+    forceOpenCameraAndTrack();
+
+    const id = setInterval(() => {
+      setTracking(true);
+      setTrackingMessage("📸 Attendance Tracking in progress...");
+      forceOpenCameraAndTrack();
+    }, 120000); 
+
+    setIntervalId(id);
+  };
+
+  const stopAutoTracking = () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+      setTracking(false);
+      setTrackingMessage("");
+      console.log("Stopped attendance tracking.");
+    }
+  };
+
+  const forceOpenCameraAndTrack = () => {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then((stream) => {
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.play();
+        video.style.display = "none";
+        document.body.appendChild(video);
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        const recognizedEmails = new Set();
+
+        const captureLoop = setInterval(async () => {
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = canvas.toDataURL("image/jpeg");
+
+          try {
+            const response = await axios.post("https://flask-b1tryl19cnn1.onrender.com/verify-face", {
+              image: imageData,
+              roomName,
+            });
+
+            const recognizedFaces = response.data.faces;
+
+            const usersColRef = collection(
+              db,
+              "attendance",
+              roomName,
+              "sessions",
+              sessionIdRef.current,
+              "users"
+            );
+
+            if (!recognizedFaces || recognizedFaces.length === 0) {
+              if (knownEmails.has(userEmail)) {
+                await addDoc(usersColRef, {
+                  email: userEmail,
+                  name: userName,
+                  attendanceStatus: "In meeting but not properly recognized",
+                  timestamp: serverTimestamp(),
+                });
+                console.log("Logged: In meeting but not properly recognized");
+              } else {
+                await addDoc(usersColRef, {
+                  email: userEmail,
+                  name: userName,
+                  attendanceStatus: "In meeting but not recognized",
+                  timestamp: serverTimestamp(),
+                });
+                console.log("Logged: In meeting but not recognized");
+              }
+            } else {
+              let userRecognized = false;
+
+              for (const face of recognizedFaces) {
+                if (face.email === userEmail) {
+                  userRecognized = true;
+                  if (!recognizedEmails.has(face.email)) {
+                    recognizedEmails.add(face.email);
+                    await addDoc(usersColRef, {
+                      email: face.email,
+                      name: face.name,
+                      attendanceStatus: "Present",
+                      timestamp: serverTimestamp(),
+                    });
+                    console.log("Logged: Present");
+                  }
+                }
+              }
+
+              if (!userRecognized) {
+                if (knownEmails.has(userEmail)) {
+                  await addDoc(usersColRef, {
+                    email: userEmail,
+                    name: userName,
+                    attendanceStatus: "In meeting but not properly recognized",
+                    timestamp: serverTimestamp(),
+                  });
+                  console.log("Logged: In meeting but not properly recognized");
+                } else {
+                  await addDoc(usersColRef, {
+                    email: userEmail,
+                    name: userName,
+                    attendanceStatus: "In meeting but not recognized",
+                    timestamp: serverTimestamp(),
+                  });
+                  console.log("Logged: In meeting but not recognized");
+                }
+              }
+            }
+          } catch (error) {
+            console.error("Recognition error:", error);
+          }
+        }, 3000); 
+
+        setTimeout(() => {
+          clearInterval(captureLoop);
+          stream.getTracks().forEach(track => track.stop());
+          video.remove();
+          setTracking(false);
+          setTrackingMessage("");
+          console.log("Stopped attendance tracking for this session.");
+        }, 15000);
+      })
+      .catch((err) => {
+        console.error("Camera access error:", err);
+      });
+  };
+
   return (
-    <div style={{ height: "100vh", width: "100%" }}>
-      {/* Jitsi Meeting Embed */}
-      <div ref={jitsiContainerRef} style={{ height: "80vh", width: "100%" }} />
-
-      {/* Display tracking status */}
-      {meetingStarted && !isMeetingEnded && (
-        <div style={{ marginTop: "20px" }}>
-          <p>{trackingStatus}</p>
+    <div className="p-4">
+      {tracking && (
+        <div className="text-lg font-semibold mb-2 text-center text-yellow-600">
+          {trackingMessage}
         </div>
       )}
-
-      {/* Show message when the professor ends the meeting */}
-      {isMeetingEnded && (
-        <div style={{ marginTop: "20px", fontSize: "18px", color: "green" }}>
-          <p>{trackingStatus}</p>
-        </div>
-      )}
+      <div ref={jitsiRef} style={{ height: "80vh", width: "100%" }}></div>
     </div>
   );
 }

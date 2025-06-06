@@ -9,13 +9,15 @@ from PIL import Image
 from io import BytesIO
 
 app = Flask(__name__)
-CORS(app)
+
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
 
 @app.route('/')
 def home():
     return "✅ Flask Server is Running. Model is Loaded."
 
-# Load model and HaarCascade
+
 base_dir = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(base_dir, "public", "models", "B1tryL19CNN1.keras")
 model = load_model(model_path)
@@ -26,7 +28,7 @@ label_map = {
     1: "Johan",
     2: "Rayleen",
     3: "Rhys",
-    # Add others
+
 }
 
 @app.route('/verify-face', methods=['POST'])
@@ -41,31 +43,26 @@ def verify_face():
         image = Image.open(BytesIO(image_bytes)).convert('RGB')
         image_np = np.array(image)
 
-        # Convert RGB to grayscale for Haar Cascade
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
 
-        # Detect faces in the image
         faces = haar_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
         if len(faces) == 0:
             return jsonify({'verified': False, 'message': 'No face detected'})
 
-        # For simplicity, take the first detected face
         (x, y, w, h) = faces[0]
         face_img = gray[y:y+h, x:x+w]
 
-        # Resize face image to model input size (e.g., 100x100)
         face_img = cv2.resize(face_img, (100, 100))
         face_img = face_img.astype('float32') / 255.0
-        face_img = np.expand_dims(face_img, axis=-1)  # add channel dimension
-        face_img = np.expand_dims(face_img, axis=0)   # batch dimension
+        face_img = np.expand_dims(face_img, axis=-1) 
+        face_img = np.expand_dims(face_img, axis=0)  
 
-        # Predict using the loaded model
         preds = model.predict(face_img)
         pred_idx = np.argmax(preds)
         confidence = preds[0][pred_idx]
 
-        if confidence > 0.7:  # threshold, tune as needed
+        if confidence > 0.7:  
             name = label_map.get(pred_idx, "Unknown")
             return jsonify({'verified': True, 'name': name, 'confidence': float(confidence)})
         else:

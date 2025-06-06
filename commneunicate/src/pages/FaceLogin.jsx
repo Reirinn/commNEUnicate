@@ -97,9 +97,9 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
     }
 
     const passcode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expireTimestamp = Date.now() + 15 * 60 * 1000; // 15 minutes expiry
+    const expireTimestamp = Date.now() + 15 * 60 * 1000; 
 
-    console.log("Sending OTP to: ", userEmail); // Debugging step
+    console.log("Sending OTP to: ", userEmail); 
 
     try {
       await emailjs.send(
@@ -108,15 +108,15 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
         {
           passcode,
           time: new Date(expireTimestamp).toLocaleTimeString(),
-          to_email: userEmail, // Ensure this is populated correctly
+          to_email: userEmail, 
         },
         "_t0q6WlQ2rNFR0o_6"
       );
       await storeOtpInFirestore(passcode, expireTimestamp);
       if (!otpSent) {
         setNotification("Too many failed attempts. OTP sent to your email.");
-        setOtpSent(true); // Ensure this is shown only once
-        setTimer(15 * 60); // 15-minute countdown
+        setOtpSent(true);
+        setTimer(15 * 60);
       }
     } catch (err) {
       console.error("EmailJS Error:", err);
@@ -151,10 +151,10 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
       }
 
       await setDoc(otpDocRef, { ...data, verified: true });
-      setNotification("OTP verified successfully!"); // Show the "OTP verified" notification
+      setNotification("OTP verified successfully!"); 
       setOtpVerified(true);
       setAttempts(0);
-      // Redirect to the dashboard immediately after OTP is verified
+      
       navigate("/dashboard");
       return true;
     } catch (err) {
@@ -165,7 +165,7 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
   };
 
   const compareFaceWithEmail = (recognizedName) => {
-    // Check if recognized name matches the email's expected name
+    
     if (userMapping[userEmail] === recognizedName) {
       return true;
     } else {
@@ -186,7 +186,7 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
     const imageSrc = webcamRef.current.getScreenshot();
 
     try {
-      const response = await fetch("http://localhost:5000/verify-face", {
+      const response = await fetch("https://flask-b1tryl19cnn1.onrender.com/verify-face", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: imageSrc }),
@@ -196,14 +196,14 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
       setVerifying(false);
 
       if (result.verified) {
-        // If the name recognized by the model is correct for the email
+      
         const isValid = compareFaceWithEmail(result.name);
         if (isValid) {
           setVerified(true);
           alert(`✅ Welcome back, ${result.name}! Role: ${role || "Unknown"}`);
           setTimeout(() => navigate("/dashboard"), 2000);
         } else {
-          // If name does not match the expected name for the email, treat as a failed attempt
+          
           alert("❌ Try Again");
           setAttempts((prev) => {
             const next = prev + 1;

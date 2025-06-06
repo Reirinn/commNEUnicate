@@ -113,7 +113,7 @@ export default function MeetingsPage({
     }
   };
 
-  // Styles for light/dark mode
+  
   const bgClass = darkMode ? "bg-gray-900 text-white" : "bg-gray-50 text-black";
   const tableBgClass = darkMode ? "bg-gray-800" : "bg-white";
   const borderColor = darkMode ? "border-gray-700" : "border-gray-300";
@@ -126,7 +126,7 @@ export default function MeetingsPage({
     ? "bg-blue-700 text-white hover:bg-blue-800"
     : "bg-blue-600 text-white hover:bg-blue-700";
 
-  // Modal styles with dark mode
+ 
   const modalBgClass = darkMode ? "bg-gray-800 text-white" : "bg-white text-black";
   const modalInputClass = darkMode
     ? "bg-gray-700 text-white border border-gray-600 placeholder-gray-400 p-3 rounded w-full mb-4"

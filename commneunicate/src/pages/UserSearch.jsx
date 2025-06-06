@@ -27,7 +27,7 @@ export default function UserSearch() {
 
 
   const handleStartChat = (otherUserId) => {
-    // Navigate to a chat page or handle chat creation logic later
+    
     navigate("/chats");
   };
 

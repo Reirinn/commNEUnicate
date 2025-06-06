@@ -12,16 +12,11 @@ import UserSearch from "./pages/UserSearch";
 import Notifications from "./pages/Notifications";
 import MeetingsPage from "./pages/MeetingsPage";
 import Attendance from "./pages/Attendance";
-import Meetings from "./pages/Meetings";
 
 function App() {
-  // Dark mode state lifted here, default to light mode (false)
   const [darkMode, setDarkMode] = useState(false);
-
-  // This will let pages toggle the mode
   const toggleDarkMode = () => setDarkMode(prev => !prev);
-
-  // Pass setDarkMode to HomePage to set initial mode
+  
   return (
     <Router>
       <Routes>
@@ -38,8 +33,7 @@ function App() {
         <Route path="/create-group" element={<CreateGroup darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
         <Route path="/search" element={<UserSearch darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
         <Route path="/notifications" element={<Notifications darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
-        <Route path="/meetingspage" element={<MeetingsPage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
-        <Route path="/meetings" element={<Meetings darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
+        <Route path="/meetings" element={<MeetingsPage darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
         <Route path="/attendance" element={<Attendance darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
         <Route path="*" element={<HomePage darkMode={darkMode} toggleDarkMode={toggleDarkMode} setDarkMode={setDarkMode} />} />
       </Routes>

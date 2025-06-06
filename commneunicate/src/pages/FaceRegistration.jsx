@@ -53,7 +53,7 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
   setProgress(0);
   setCapturedCount(0);
 
-  const duration = 10000; // 10 seconds
+  const duration = 10000; 
   const framesToCapture = totalImages;
   const captureInterval = duration / framesToCapture;
 
@@ -61,7 +61,7 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
   const context = canvas.getContext("2d");
   const stream = videoRef.current.srcObject;
 
-  let count = 0; // local counter
+  let count = 0; 
 
   const timer = setInterval(async () => {
     if (count >= totalImages) {
@@ -69,7 +69,7 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
       stream.getTracks().forEach((track) => track.stop());
 
       alert("✅ Face Images Gathered Successfully! Please Log in.");
-      navigate("/"); // redirect
+      navigate("/"); 
       return;
     }
 
@@ -103,7 +103,7 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
           timestamp: new Date(),
         });
 
-        count++; // update local count
+        count++; 
         setCapturedCount(count);
         setProgress(Math.floor((count / totalImages) * 100));
         console.log(`📸 Captured image ${count}/${totalImages}`);

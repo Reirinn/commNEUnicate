@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { collection, getDocs, addDoc, serverTimestamp, query, where } from "firebase/firestore";
-import { db, auth } from "../firebase"; // Use Firestore only
+import { db, auth } from "../firebase"; 
 
 export default function CreateGroup({ userRole, userName, userSubjects = [], userSection = "", onGroupCreated }) {
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState([]);
   const [groupName, setGroupName] = useState("");
-  const [groupPhotoURL, setGroupPhotoURL] = useState(null); // State to store the base64 string for the photo
-  const [showCreateForm, setShowCreateForm] = useState(true);  // Local state to toggle visibility of the form
+  const [groupPhotoURL, setGroupPhotoURL] = useState(null); 
+  const [showCreateForm, setShowCreateForm] = useState(true);  
   const currentUser = auth.currentUser;
 
   useEffect(() => {
@@ -17,7 +17,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
       try {
         let usersList = [];
 
-        // Fetch only student users (exclude current user) and filter by section & subjects
+      
         if (userRole === "professor") {
           const usersRef = collection(db, "users");
           const q = query(usersRef, where("role", "==", "student"));
@@ -26,7 +26,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
           usersList = querySnapshot.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
             .filter(u =>
-              u.id !== currentUser.uid &&  // Exclude current user
+              u.id !== currentUser.uid &&  
               u.section === userSection &&
               u.subjects?.some(s => userSubjects.includes(s))
             );
@@ -35,7 +35,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
           const querySnapshot = await getDocs(usersRef);
           usersList = querySnapshot.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(u => u.id !== currentUser.uid && u.role === "student");  // Only show students
+            .filter(u => u.id !== currentUser.uid && u.role === "student"); 
         }
 
         setUsers(usersList);
@@ -56,12 +56,12 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
   const handleGroupPhotoUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Create base64 string for the uploaded image
+     
       const reader = new FileReader();
       reader.onloadend = () => {
-        setGroupPhotoURL(reader.result); // Store base64 string for the uploaded photo
+        setGroupPhotoURL(reader.result); 
       };
-      reader.readAsDataURL(file); // Read the file and convert it to base64 string
+      reader.readAsDataURL(file);
     }
   };
 
@@ -72,7 +72,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
     }
 
     try {
-      // Save group photo URL directly as base64 string (no storage, only Firestore)
+     
       const newGroup = {
         name: groupName,
         members: [...selected, currentUser.uid],
@@ -84,25 +84,25 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
           text: "Group created.",
           timestamp: serverTimestamp()
         },
-        photoURL: groupPhotoURL || ""  // Save the base64 string URL if available
+        photoURL: groupPhotoURL || ""  
       };
 
-      // Save to 'groups' collection for detailed group info (GroupName, Admin, Members)
+      
       const groupDocRef = await addDoc(collection(db, "groups"), {
         groupName: groupName,
         admin: currentUser.uid,
         members: [...selected, currentUser.uid],
         createdAt: serverTimestamp(),
-        photoURL: groupPhotoURL || ""  // Save the base64 string URL in Firestore
+        photoURL: groupPhotoURL || "" 
       });
 
       alert("Group chat created!");
       setGroupName("");
       setSelected([]);
-      setGroupPhotoURL(null); // Reset the group photo preview
+      setGroupPhotoURL(null); 
       if (onGroupCreated) onGroupCreated(groupDocRef.id);
 
-      // Hide the create group form after creation
+      
       setShowCreateForm(false);
     } catch (err) {
       console.error("Error creating group:", err);
@@ -111,12 +111,12 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
   };
 
   const handleCancel = () => {
-    // Simply hide the create group form
-    setShowCreateForm(false);  // Hide the form
+    
+    setShowCreateForm(false); 
   };
 
   if (!showCreateForm) {
-    return null; // Return null if the form is closed
+    return null; 
   }
 
   return (
@@ -140,7 +140,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
           <input
             type="file"
             id="groupPhoto"
-            accept="image/*"  // Only accept image files
+            accept="image/*"  
             onChange={handleGroupPhotoUpload}
             className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white"
           />
@@ -188,7 +188,7 @@ export default function CreateGroup({ userRole, userName, userSubjects = [], use
         </button>
 
         <button
-          onClick={handleCancel} // Close the form
+          onClick={handleCancel}
           className="mt-2 bg-gray-600 text-white px-6 py-3 rounded hover:bg-gray-700 w-full"
         >
           Cancel

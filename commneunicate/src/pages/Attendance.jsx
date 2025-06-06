@@ -1,186 +1,188 @@
 import React, { useEffect, useState } from "react";
-import { db, auth } from "../firebase";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
-import { FaDownload } from "react-icons/fa";
+import { db } from "../firebase";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import * as XLSX from "xlsx";
 
 export default function Attendance() {
-  const [attendanceRecords, setAttendanceRecords] = useState([]);
-  const [userRole, setUserRole] = useState("");
-  const [userName, setUserName] = useState("");
-  const currentUser = auth.currentUser;
+  const [attendanceData, setAttendanceData] = useState([]); 
+  const [loading, setLoading] = useState(true);
+
+  
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalData, setModalData] = useState([]); 
+  const [modalTitle, setModalTitle] = useState("");
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      if (!currentUser) return;
-      const userDocRef = doc(db, "users", currentUser.uid);
-      const userSnap = await getDoc(userDocRef);
-
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        setUserRole(userData.role);
-        setUserName(userData.firstName);
-      }
-    };
-
-    fetchUserData();
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!currentUser || !userRole) return;
-
-    const fetchAttendance = async () => {
+    async function fetchAttendance() {
+      setLoading(true);
       try {
-        let q;
-        if (userRole === "professor") {
-          q = query(collection(db, "attendance"), where("professorId", "==", currentUser.uid));
-        } else {
-          q = query(
-            collection(db, "attendance"),
-            where("students", "array-contains", currentUser.uid)
-          );
+        const roomsSnap = await getDocs(collection(db, "attendance"));
+        const filteredRoomDocs = roomsSnap.docs.filter(doc => doc.id !== "attendaceId");
+
+        const rooms = [];
+        for (const roomDoc of filteredRoomDocs) {
+          const roomName = roomDoc.id;
+          const sessionsRef = collection(db, "attendance", roomName, "sessions");
+          const sessionsSnap = await getDocs(query(sessionsRef, orderBy("createdAt", "desc")));
+
+          const sessions = sessionsSnap.docs.map((sessionDoc) => ({
+            id: sessionDoc.id,
+            createdAt: sessionDoc.data().createdAt?.toDate() || null,
+          }));
+
+          rooms.push({ roomName, sessions });
         }
 
-        const querySnapshot = await getDocs(q);
-        const records = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        setAttendanceRecords(records);
-      } catch (err) {
-        console.error("Error fetching attendance:", err);
+        setAttendanceData(rooms);
+      } catch (error) {
+        console.error("Error fetching attendance:", error);
       }
-    };
+      setLoading(false);
+    }
 
     fetchAttendance();
-  }, [currentUser, userRole]);
+  }, []);
 
-  const groupBySession = () => {
-    const groups = {};
-    attendanceRecords.forEach((rec) => {
-      const dateStr = rec.date ? new Date(rec.date.seconds * 1000).toLocaleDateString() : "Unknown Date";
-      const key = `${rec.className} | ${dateStr}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(rec);
-    });
-    return groups;
-  };
+ 
+  async function fetchSessionUsers(roomName, sessionId) {
+    const usersRef = collection(db, "attendance", roomName, "sessions", sessionId, "users");
+    const usersSnap = await getDocs(usersRef);
+    return usersSnap.docs.map((doc) => doc.data());
+  }
 
-  const downloadCSV = (sessionRecords, sessionLabel) => {
-    const headers = ["Student Name", "Status"];
-    const rows = sessionRecords.map((rec) => {
-      if (rec.students && rec.students.length > 0) {
-        return rec.students.map((s) => [s.studentName, s.status]);
-      }
-      return [];
-    }).flat();
+  
+  async function handleView(roomName, sessionId) {
+    const users = await fetchSessionUsers(roomName, sessionId);
+    if (users.length === 0) {
+      alert("No attendance data found for this session.");
+      return;
+    }
+    setModalTitle(`Attendance for ${roomName} - Session ${sessionId}`);
+    setModalData(users);
+    setModalOpen(true);
+  }
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((r) => r.join(","))
-    ].join("\n");
+  
+  async function handleDownload(roomName, sessionId) {
+    const users = await fetchSessionUsers(roomName, sessionId);
+    if (users.length === 0) {
+      alert("No attendance data found for this session.");
+      return;
+    }
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+    const worksheetData = users.map(({ name, email, attendanceStatus, timestamp }) => ({
+      Name: name,
+      Email: email,
+      Status: attendanceStatus,
+      Timestamp: timestamp?.toDate?.().toLocaleString() || "",
+    }));
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `Attendance_${sessionLabel.replace(/\s+/g, "_")}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+    const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
 
-  const renderStudentTable = () => (
-    <table className="min-w-full bg-white dark:bg-gray-800 rounded shadow mx-auto">
-      <thead>
-        <tr className="text-left border-b border-gray-300 dark:border-gray-700">
-          <th className="p-3 text-gray-700 dark:text-gray-300">Class</th>
-          <th className="p-3 text-gray-700 dark:text-gray-300">Date</th>
-          <th className="p-3 text-gray-700 dark:text-gray-300">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {attendanceRecords.map((record) => {
-          const studentAttendance = record.students.find(
-            (student) => student.studentId === currentUser.uid
-          );
-          return (
-            <tr
-              key={record.id}
-              className="border-b border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-            >
-              <td className="p-3 text-gray-800 dark:text-gray-200">{record.className}</td>
-              <td className="p-3 text-gray-800 dark:text-gray-200">
-                {new Date(record.date.seconds * 1000).toLocaleString()}
-              </td>
-              <td className="p-3 text-gray-800 dark:text-gray-200">
-                {studentAttendance ? studentAttendance.status : "Not Available"}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
+    XLSX.writeFile(workbook, `Attendance_${roomName}_${sessionId}.xlsx`);
+  }
 
-  const renderProfessorTable = () => {
-    const grouped = groupBySession();
-    return (
-      <>
-        {Object.entries(grouped).map(([sessionLabel, records]) => (
-          <div key={sessionLabel} className="mb-8 max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-lg text-gray-700 dark:text-gray-300">{sessionLabel}</h3>
-              <button
-                onClick={() => downloadCSV(records, sessionLabel)}
-                className="flex items-center bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-              >
-                <FaDownload className="mr-2" /> Download
-              </button>
-            </div>
-            <table className="min-w-full bg-white dark:bg-gray-800 rounded shadow">
+  if (loading) return <p>Loading attendance data...</p>;
+
+  if (attendanceData.length === 0) return <p>No attendance records found.</p>;
+
+  return (
+    <div className="p-4 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4 text-center">Attendance Records</h1>
+      {attendanceData.map(({ roomName, sessions }) => (
+        <div key={roomName} className="mb-8 border p-4 rounded shadow">
+          <h2 className="text-xl font-semibold mb-3">Meeting: {roomName}</h2>
+          {sessions.length === 0 ? (
+            <p className="italic text-gray-600">No sessions recorded yet.</p>
+          ) : (
+            <table className="w-full table-auto border-collapse border border-gray-300">
               <thead>
-                <tr className="text-left border-b border-gray-300 dark:border-gray-700">
-                  <th className="p-3 text-gray-700 dark:text-gray-300">Class</th>
-                  <th className="p-3 text-gray-700 dark:text-gray-300">Date</th>
-                  <th className="p-3 text-gray-700 dark:text-gray-300">Student Name</th>
-                  <th className="p-3 text-gray-700 dark:text-gray-300">Status</th>
+                <tr>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Session Date</th>
+                  <th className="border border-gray-300 px-4 py-2 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((record) =>
-                  record.students.map((student) => (
-                    <tr
-                      key={`${record.id}-${student.studentId}`}
-                      className="border-b border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                    >
-                      <td className="p-3 text-gray-800 dark:text-gray-200">{record.className}</td>
-                      <td className="p-3 text-gray-800 dark:text-gray-200">
-                        {new Date(record.date.seconds * 1000).toLocaleString()}
-                      </td>
-                      <td className="p-3 text-gray-800 dark:text-gray-200">{student.studentName}</td>
-                      <td className="p-3 text-gray-800 dark:text-gray-200">{student.status}</td>
-                    </tr>
-                  ))
-                )}
+                {sessions.map(({ id, createdAt }) => (
+                  <tr key={id} className="hover:bg-gray-100">
+                    <td className="border border-gray-300 px-4 py-2">
+                      {createdAt ? createdAt.toLocaleString() : "No date"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 space-x-4">
+                      <button
+                        onClick={() => handleView(roomName, id)}
+                        className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => handleDownload(roomName, id)}
+                        className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                      >
+                        Download
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-          </div>
-        ))}
-      </>
-    );
-  };
+          )}
+        </div>
+      ))}
 
-  return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <h2 className="text-2xl font-bold mb-6 text-blue-800 dark:text-blue-400 text-center">Attendance</h2>
-      {userRole === "professor" && (
-        <p className="mb-4 text-gray-600 dark:text-gray-300 max-w-4xl mx-auto text-center">
-          Click the download button next to each session to export attendance as CSV.
-        </p>
+      {/* Modal */}
+      {modalOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50"
+          onClick={() => setModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold mb-4">{modalTitle}</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse border border-gray-300">
+                <thead>
+                  <tr>
+                    <th className="border border-gray-300 px-3 py-1 text-left">Name</th>
+                    <th className="border border-gray-300 px-3 py-1 text-left">Email</th>
+                    <th className="border border-gray-300 px-3 py-1 text-left">Status</th>
+                    <th className="border border-gray-300 px-3 py-1 text-left">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modalData.map((user, idx) => (
+                    <tr key={idx} className="hover:bg-gray-100">
+                      <td className="border border-gray-300 px-3 py-1">{user.name || "-"}</td>
+                      <td className="border border-gray-300 px-3 py-1">{user.email || "-"}</td>
+                      <td className="border border-gray-300 px-3 py-1">{user.attendanceStatus || "-"}</td>
+                      <td className="border border-gray-300 px-3 py-1">
+                        {user.timestamp?.toDate ? user.timestamp.toDate().toLocaleString() : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                  {modalData.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="text-center p-4">
+                        No attendance data available.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <button
+              onClick={() => setModalOpen(false)}
+              className="mt-4 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
-      {userRole === "student" ? renderStudentTable() : renderProfessorTable()}
     </div>
   );
 }

@@ -47,7 +47,7 @@ export default function Chats({ userRole, darkMode }) {
         ...doc.data(),
       }));
 
-      // Fetch user profiles for chat partners
+      
       const userIds = new Set();
       privateChats.forEach(chat => {
         chat.members.forEach(uid => {
@@ -169,7 +169,7 @@ export default function Chats({ userRole, darkMode }) {
     setShowSearchModal(false);
   };
 
-  // Styles for light/dark mode
+  
   const bgClass = darkMode ? "bg-gray-900 text-white" : "bg-gray-100 text-black";
   const paneBgClass = darkMode ? "bg-gray-800" : "bg-white";
   const inputBgClass = darkMode ? "bg-gray-700 text-white border-gray-600" : "bg-white text-black border-gray-300";
