@@ -136,7 +136,7 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
           const imageData = canvas.toDataURL("image/jpeg");
 
           try {
-            const response = await axios.post("https://flask-b1tryl19cnn1.onrender.com/verify-face", {
+            const response = await axios.post("http://localhost:5000/verify-face", {
               image: imageData,
               roomName,
             });

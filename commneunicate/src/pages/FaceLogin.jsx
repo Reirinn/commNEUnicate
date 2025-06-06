@@ -186,7 +186,7 @@ export default function FaceLogin({ darkMode, toggleDarkMode }) {
     const imageSrc = webcamRef.current.getScreenshot();
 
     try {
-      const response = await fetch("https://flask-b1tryl19cnn1.onrender.com/verify-face", {
+      const response = await fetch("http://localhost:5000/verify-face", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: imageSrc }),
