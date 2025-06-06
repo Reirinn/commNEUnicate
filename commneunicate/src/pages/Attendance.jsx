@@ -4,12 +4,11 @@ import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import * as XLSX from "xlsx";
 
 export default function Attendance() {
-  const [attendanceData, setAttendanceData] = useState([]); 
+  const [attendanceData, setAttendanceData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalData, setModalData] = useState([]); 
+  const [modalData, setModalData] = useState([]);
   const [modalTitle, setModalTitle] = useState("");
 
   useEffect(() => {
@@ -43,14 +42,12 @@ export default function Attendance() {
     fetchAttendance();
   }, []);
 
- 
   async function fetchSessionUsers(roomName, sessionId) {
     const usersRef = collection(db, "attendance", roomName, "sessions", sessionId, "users");
     const usersSnap = await getDocs(usersRef);
     return usersSnap.docs.map((doc) => doc.data());
   }
 
-  
   async function handleView(roomName, sessionId) {
     const users = await fetchSessionUsers(roomName, sessionId);
     if (users.length === 0) {
@@ -62,7 +59,6 @@ export default function Attendance() {
     setModalOpen(true);
   }
 
-  
   async function handleDownload(roomName, sessionId) {
     const users = await fetchSessionUsers(roomName, sessionId);
     if (users.length === 0) {
@@ -84,33 +80,37 @@ export default function Attendance() {
     XLSX.writeFile(workbook, `Attendance_${roomName}_${sessionId}.xlsx`);
   }
 
-  if (loading) return <p>Loading attendance data...</p>;
+  if (loading) return <p className="text-black dark:text-white text-center mt-10">Loading attendance data...</p>;
 
-  if (attendanceData.length === 0) return <p>No attendance records found.</p>;
+  if (attendanceData.length === 0) return <p className="text-black dark:text-white text-center mt-10">No attendance records found.</p>;
 
   return (
-    <div className="p-4 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4 text-center">Attendance Records</h1>
+    <div className="p-4 max-w-4xl mx-auto bg-white dark:bg-gray-900 rounded-lg">
+      <h1 className="text-2xl font-bold mb-6 text-black dark:text-white text-center">
+        Attendance Records
+      </h1>
       {attendanceData.map(({ roomName, sessions }) => (
-        <div key={roomName} className="mb-8 border p-4 rounded shadow">
-          <h2 className="text-xl font-semibold mb-3">Meeting: {roomName}</h2>
+        <div key={roomName} className="mb-8 border border-gray-300 dark:border-white p-4 rounded shadow">
+          <h2 className="text-xl font-semibold mb-3 text-black dark:text-white">
+            Meeting: {roomName}
+          </h2>
           {sessions.length === 0 ? (
-            <p className="italic text-gray-600">No sessions recorded yet.</p>
+            <p className="italic text-gray-700 dark:text-gray-300">No sessions recorded yet.</p>
           ) : (
-            <table className="w-full table-auto border-collapse border border-gray-300">
+            <table className="w-full table-auto border-collapse border border-gray-300 dark:border-white">
               <thead>
-                <tr>
-                  <th className="border border-gray-300 px-4 py-2 text-left">Session Date</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left">Actions</th>
+                <tr className="bg-gray-100 dark:bg-gray-800 text-black dark:text-white">
+                  <th className="border border-gray-300 dark:border-white px-4 py-2 text-left">Session Date</th>
+                  <th className="border border-gray-300 dark:border-white px-4 py-2 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sessions.map(({ id, createdAt }) => (
-                  <tr key={id} className="hover:bg-gray-100">
-                    <td className="border border-gray-300 px-4 py-2">
+                  <tr key={id} className="hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <td className="border border-gray-300 dark:border-white px-4 py-2 text-black dark:text-white">
                       {createdAt ? createdAt.toLocaleString() : "No date"}
                     </td>
-                    <td className="border border-gray-300 px-4 py-2 space-x-4">
+                    <td className="border border-gray-300 dark:border-white px-4 py-2 space-x-4">
                       <button
                         onClick={() => handleView(roomName, id)}
                         className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
@@ -139,34 +139,34 @@ export default function Attendance() {
           onClick={() => setModalOpen(false)}
         >
           <div
-            className="bg-white rounded-lg shadow-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto p-6"
+            className="bg-white dark:bg-gray-900 text-black dark:text-white rounded-lg shadow-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-xl font-semibold mb-4">{modalTitle}</h3>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse border border-gray-300">
+              <table className="w-full border-collapse border border-gray-300 dark:border-white">
                 <thead>
-                  <tr>
-                    <th className="border border-gray-300 px-3 py-1 text-left">Name</th>
-                    <th className="border border-gray-300 px-3 py-1 text-left">Email</th>
-                    <th className="border border-gray-300 px-3 py-1 text-left">Status</th>
-                    <th className="border border-gray-300 px-3 py-1 text-left">Timestamp</th>
+                  <tr className="bg-gray-100 dark:bg-gray-800 text-black dark:text-white">
+                    <th className="border border-gray-300 dark:border-white px-3 py-1 text-left">Name</th>
+                    <th className="border border-gray-300 dark:border-white px-3 py-1 text-left">Email</th>
+                    <th className="border border-gray-300 dark:border-white px-3 py-1 text-left">Status</th>
+                    <th className="border border-gray-300 dark:border-white px-3 py-1 text-left">Timestamp</th>
                   </tr>
                 </thead>
                 <tbody>
                   {modalData.map((user, idx) => (
-                    <tr key={idx} className="hover:bg-gray-100">
-                      <td className="border border-gray-300 px-3 py-1">{user.name || "-"}</td>
-                      <td className="border border-gray-300 px-3 py-1">{user.email || "-"}</td>
-                      <td className="border border-gray-300 px-3 py-1">{user.attendanceStatus || "-"}</td>
-                      <td className="border border-gray-300 px-3 py-1">
+                    <tr key={idx} className="hover:bg-gray-100 dark:hover:bg-gray-700">
+                      <td className="border border-gray-300 dark:border-white px-3 py-1">{user.name || "-"}</td>
+                      <td className="border border-gray-300 dark:border-white px-3 py-1">{user.email || "-"}</td>
+                      <td className="border border-gray-300 dark:border-white px-3 py-1">{user.attendanceStatus || "-"}</td>
+                      <td className="border border-gray-300 dark:border-white px-3 py-1">
                         {user.timestamp?.toDate ? user.timestamp.toDate().toLocaleString() : "-"}
                       </td>
                     </tr>
                   ))}
                   {modalData.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="text-center p-4">
+                      <td colSpan={4} className="text-center p-4 text-black dark:text-white">
                         No attendance data available.
                       </td>
                     </tr>
