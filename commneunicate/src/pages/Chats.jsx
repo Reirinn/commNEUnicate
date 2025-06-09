@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   collection,
   query,
@@ -14,6 +14,9 @@ import {
   limit,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+
+const storage = getStorage();
 
 export default function Chats({ userRole, darkMode }) {
   const [chats, setChats] = useState([]);
@@ -25,6 +28,12 @@ export default function Chats({ userRole, darkMode }) {
   const [searchResults, setSearchResults] = useState([]);
   const [userProfiles, setUserProfiles] = useState({});
   const [loading, setLoading] = useState(true);
+  const [file, setFile] = useState(null); // For storing the selected file
+  const [fileUrl, setFileUrl] = useState(""); // File URL for sending
+  const [uploading, setUploading] = useState(false); // For managing the upload state
+  const [fileProgress, setFileProgress] = useState(0); // For tracking upload progress
+
+  const fileInputRef = useRef(null); // Reference to the file input
 
   const currentUser = auth.currentUser;
 
@@ -41,25 +50,26 @@ export default function Chats({ userRole, darkMode }) {
     );
 
     const unsubscribe = onSnapshot(privateChatsQuery, async (snapshot) => {
-      const privateChats = snapshot.docs.map(doc => ({
+      const privateChats = snapshot.docs.map((doc) => ({
         id: doc.id,
         isGroup: false,
         ...doc.data(),
       }));
 
-      
       const userIds = new Set();
-      privateChats.forEach(chat => {
-        chat.members.forEach(uid => {
+      privateChats.forEach((chat) => {
+        chat.members.forEach((uid) => {
           if (uid !== currentUser.uid) userIds.add(uid);
         });
       });
 
       const userMap = {};
-      await Promise.all(Array.from(userIds).map(async (uid) => {
-        const userDoc = await getDoc(doc(db, "users", uid));
-        if (userDoc.exists()) userMap[uid] = userDoc.data();
-      }));
+      await Promise.all(
+        Array.from(userIds).map(async (uid) => {
+          const userDoc = await getDoc(doc(db, "users", uid));
+          if (userDoc.exists()) userMap[uid] = userDoc.data();
+        })
+      );
 
       setUserProfiles(userMap);
       setChats(privateChats);
@@ -78,41 +88,91 @@ export default function Chats({ userRole, darkMode }) {
     const messagesCollection = collection(db, "chats", selectedChat.id, "messages");
     const q = query(messagesCollection, orderBy("timestamp", "asc"));
 
-    const unsubscribe = onSnapshot(q, snapshot => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setMessages(msgs);
     });
 
     return () => unsubscribe();
   }, [selectedChat]);
 
+  // Reset file and fileUrl states when switching chats or sending the message
+  const resetFileState = () => {
+    setFile(null);
+    setFileUrl("");
+    setUploading(false);
+    setFileProgress(0);
+  };
+
   const goToChat = (chat) => {
     setSelectedChat(chat);
+    resetFileState(); // Reset file state when switching to a different chat
+  };
+
+  // Handle file change (file input)
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+
+    // Show file preview or file name
+    setFile(selectedFile);
+    setFileUrl(URL.createObjectURL(selectedFile)); // For preview if it's an image
+
+    // Start file upload to Firebase Storage
+    const fileRef = ref(storage, `chats/${selectedChat.id}/${selectedFile.name}`);
+    const uploadTask = uploadBytesResumable(fileRef, selectedFile);
+
+    // Set uploading state to true
+    setUploading(true);
+
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setFileProgress(progress);
+      },
+      (error) => {
+        console.error("File upload failed", error);
+        setUploading(false);
+      },
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref());
+        setFileUrl(downloadURL); // Set the file URL after upload completion
+        setUploading(false); // End uploading
+      }
+    );
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedChat) return;
+    if (!newMessage.trim() && !file) return;
 
     try {
-      await addDoc(
-        collection(db, "chats", selectedChat.id, "messages"),
-        {
-          text: newMessage,
-          senderId: currentUser.uid,
-          timestamp: serverTimestamp(),
-        }
-      );
+      const messageData = {
+        text: newMessage,
+        senderId: currentUser.uid,
+        timestamp: serverTimestamp(),
+      };
 
+      // If there's a file (image or document), include the file URL in the message
+      if (fileUrl) {
+        messageData.fileUrl = fileUrl;
+        messageData.fileName = file.name;
+        setFile(null); // Reset the file after sending
+      }
+
+      // Send the message with the file (if any)
+      await addDoc(collection(db, "chats", selectedChat.id, "messages"), messageData);
       const chatDocRef = doc(db, "chats", selectedChat.id);
       await updateDoc(chatDocRef, {
         lastMessage: {
-          text: newMessage,
+          text: newMessage || `Sent a file: ${file.name}`,
           timestamp: serverTimestamp(),
         },
       });
 
       setNewMessage("");
+      resetFileState(); // Reset the file state after sending the message
     } catch (error) {
       console.error("Error sending message:", error);
     }
@@ -126,7 +186,7 @@ export default function Chats({ userRole, darkMode }) {
     const snapshot = await getDocs(usersRef);
 
     const matches = snapshot.docs
-      .filter(doc => {
+      .filter((doc) => {
         const data = doc.data();
         const fullName = `${data.firstName} ${data.lastName}`.toLowerCase();
         return (
@@ -134,7 +194,7 @@ export default function Chats({ userRole, darkMode }) {
           data.email.toLowerCase().includes(searchTerm.toLowerCase())
         );
       })
-      .filter(doc => doc.id !== currentUser.uid);
+      .filter((doc) => doc.id !== currentUser.uid);
 
     setSearchResults(matches);
   };
@@ -146,7 +206,7 @@ export default function Chats({ userRole, darkMode }) {
     );
     const snapshot = await getDocs(q);
     const existing = snapshot.docs.find(
-      doc => doc.data().members.includes(targetUid)
+      (doc) => doc.data().members.includes(targetUid)
     );
 
     if (existing) {
@@ -169,7 +229,6 @@ export default function Chats({ userRole, darkMode }) {
     setShowSearchModal(false);
   };
 
-  
   const bgClass = darkMode ? "bg-gray-900 text-white" : "bg-gray-100 text-black";
   const paneBgClass = darkMode ? "bg-gray-800" : "bg-white";
   const inputBgClass = darkMode ? "bg-gray-700 text-white border-gray-600" : "bg-white text-black border-gray-300";
@@ -182,7 +241,6 @@ export default function Chats({ userRole, darkMode }) {
       <div className={`w-1/3 p-4 border-r border-gray-600 ${paneBgClass}`}>
         <div className="flex justify-between mb-4">
           <h2 className={`text-xl font-bold ${darkMode ? "text-blue-400" : "text-blue-800"}`}>Your Chats</h2>
-          {/* Removed Create Group Button */}
         </div>
 
         <button
@@ -211,7 +269,7 @@ export default function Chats({ userRole, darkMode }) {
                 <input
                   type="text"
                   value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Name or email"
                   className={`flex-1 px-3 py-2 rounded border ${inputBgClass}`}
                 />
@@ -223,7 +281,7 @@ export default function Chats({ userRole, darkMode }) {
                 </button>
               </form>
               <div className="mt-4 max-h-64 overflow-y-auto space-y-2">
-                {searchResults.map(userDoc => {
+                {searchResults.map((userDoc) => {
                   const user = userDoc.data();
                   return (
                     <div
@@ -260,15 +318,19 @@ export default function Chats({ userRole, darkMode }) {
           {!loading && chats.length === 0 && (
             <p className={`${darkMode ? "text-gray-300" : "text-gray-700"}`}>No chats found.</p>
           )}
-          {chats.map(chat => {
-            const partnerUid = chat.members.find(uid => uid !== currentUser.uid);
+          {chats.map((chat) => {
+            const partnerUid = chat.members.find((uid) => uid !== currentUser.uid);
             const partner = userProfiles[partnerUid] || {};
             return (
               <li
                 key={chat.id}
                 onClick={() => goToChat(chat)}
                 className={`p-3 rounded cursor-pointer hover:${darkMode ? "bg-blue-700" : "bg-blue-100"} ${
-                  selectedChat?.id === chat.id ? (darkMode ? "bg-blue-600" : "bg-blue-200") : paneBgClass
+                  selectedChat?.id === chat.id
+                    ? darkMode
+                      ? "bg-blue-600"
+                      : "bg-blue-200"
+                    : paneBgClass
                 }`}
               >
                 <div className="flex items-center space-x-3">
@@ -298,13 +360,13 @@ export default function Chats({ userRole, darkMode }) {
           <>
             <div className="flex justify-between items-center mb-4">
               <h2 className={`text-xl font-semibold ${darkMode ? "text-blue-400" : "text-blue-800"}`}>
-                {userProfiles[selectedChat.members.find(uid => uid !== currentUser.uid)]?.firstName || ""}{" "}
-                {userProfiles[selectedChat.members.find(uid => uid !== currentUser.uid)]?.lastName || ""}
+                {userProfiles[selectedChat.members.find((uid) => uid !== currentUser.uid)]?.firstName || ""}{" "}
+                {userProfiles[selectedChat.members.find((uid) => uid !== currentUser.uid)]?.lastName || ""}
               </h2>
             </div>
 
             <div className={`flex-grow overflow-y-auto mb-4 p-3 rounded shadow-inner ${darkMode ? "bg-gray-700" : "bg-gray-100"}`}>
-              {messages.map(msg => (
+              {messages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`mb-2 ${msg.senderId === currentUser.uid ? "text-right" : "text-left"}`}
@@ -322,6 +384,35 @@ export default function Chats({ userRole, darkMode }) {
                   >
                     {msg.text}
                   </div>
+
+                  {/* If there's a file URL, display it inside the bubble */}
+                  {msg.fileUrl && (
+                    <div className="mt-2">
+                      {/* If it's an image, show it as an image */}
+                      {msg.fileUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
+                        <img
+                          src={msg.fileUrl}
+                          alt={msg.fileName || "Sent image"}
+                          className="w-48 max-h-48 object-contain rounded shadow"
+                        />
+                      ) : (
+                        <div>
+                          <p className="text-sm font-medium">📄 {msg.fileName || "Download file"}</p>
+                        </div>
+                      )}
+
+                      {/* Download link for all files */}
+                      <a
+                        href={msg.fileUrl}
+                        download={msg.fileName || "file"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-300 underline text-sm mt-1 inline-block"
+                      >
+                        ⬇️ Download
+                      </a>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -330,10 +421,39 @@ export default function Chats({ userRole, darkMode }) {
               <input
                 type="text"
                 value={newMessage}
-                onChange={e => setNewMessage(e.target.value)}
+                onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Type a message..."
                 className={`flex-grow p-2 rounded border ${inputBgClass}`}
               />
+              {/* File input with a button to trigger the file picker */}
+              <input
+                type="file"
+                accept="image/*, .pdf, .docx, .txt"
+                onChange={handleFileChange}
+                className="hidden"
+                ref={fileInputRef}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current.click()}
+                className={`px-4 py-2 rounded text-white ${buttonBgClass}`}
+              >
+                📎 Attach File
+              </button>
+              {/* Show file preview */}
+              {file && (
+                <div className="mt-2">
+                  {file.type.includes("image") ? (
+                    <img
+                      src={fileUrl}
+                      alt={file.name}
+                      className="max-w-xs max-h-40 object-contain"
+                    />
+                  ) : (
+                    <p>{file.name}</p>
+                  )}
+                </div>
+              )}
               <button
                 type="submit"
                 className={`px-4 py-2 rounded text-white ${buttonBgClass}`}
@@ -341,6 +461,13 @@ export default function Chats({ userRole, darkMode }) {
                 Send
               </button>
             </form>
+
+            {/* File upload progress */}
+            {uploading && (
+              <div className="mt-2">
+                <progress value={fileProgress} max="100" className="w-full"></progress>
+              </div>
+            )}
           </>
         ) : (
           <p className={`${darkMode ? "text-gray-300" : "text-gray-700"} text-center mt-20`}>

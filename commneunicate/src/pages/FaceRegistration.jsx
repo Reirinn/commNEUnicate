@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import * as faceapi from "face-api.js";
 import { db } from "../firebase";
 import { collection, addDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
@@ -19,20 +18,6 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
     }
   }, [user, navigate]);
 
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        const MODEL_URL = "/models";
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        console.log("✅ face-api model loaded successfully");
-      } catch (err) {
-        console.error("❌ Failed to load face-api models", err);
-      }
-    };
-
-    loadModels();
-  }, []);
-
   const startVideo = () => {
     if (!videoRef.current || videoRef.current.srcObject) return;
     navigator.mediaDevices
@@ -43,77 +28,69 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
       .catch((err) => console.error("Camera error:", err));
   };
 
- const captureImages = async () => {
-  if (!user || !user.uid) {
-    console.error("❌ User UID is missing");
-    return;
-  }
-
-  setIsCapturing(true);
-  setProgress(0);
-  setCapturedCount(0);
-
-  const duration = 10000; 
-  const framesToCapture = totalImages;
-  const captureInterval = duration / framesToCapture;
-
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  const stream = videoRef.current.srcObject;
-
-  let count = 0; 
-
-  const timer = setInterval(async () => {
-    if (count >= totalImages) {
-      clearInterval(timer);
-      stream.getTracks().forEach((track) => track.stop());
-
-      alert("✅ Face Images Gathered Successfully! Please Log in.");
-      navigate("/"); 
+  const captureImages = async () => {
+    if (!user || !user.uid) {
+      console.error("❌ User UID is missing");
       return;
     }
 
-    const result = await faceapi.detectSingleFace(
-      videoRef.current,
-      new faceapi.TinyFaceDetectorOptions()
-    );
+    setIsCapturing(true);
+    setProgress(0);
+    setCapturedCount(0);
 
-    if (result) {
+    const duration = 10000; // 10 seconds
+    const captureInterval = duration / totalImages;
+
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    const stream = videoRef.current.srcObject;
+
+    let count = 0;
+    let isFinished = false;
+
+    const timer = setInterval(async () => {
+      if (!videoRef.current || !context || isFinished) return;
+
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
-      context.drawImage(videoRef.current, 0, 0);
-      const croppedImage = context.getImageData(
-        result.box.x,
-        result.box.y,
-        result.box.width,
-        result.box.height
-      );
-
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = result.box.width;
-      tempCanvas.height = result.box.height;
-      const tempCtx = tempCanvas.getContext("2d");
-      tempCtx.putImageData(croppedImage, 0, 0);
-
-      const base64Image = tempCanvas.toDataURL("image/jpeg");
+      context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const base64Image = canvas.toDataURL("image/jpeg");
 
       try {
-        await addDoc(collection(db, "users", user.uid, "face_datasets"), {
-          image: base64Image,
-          timestamp: new Date(),
+        const response = await fetch("http://localhost:5000/verify-face", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64Image }),
         });
 
-        count++; 
-        setCapturedCount(count);
-        setProgress(Math.floor((count / totalImages) * 100));
-        console.log(`📸 Captured image ${count}/${totalImages}`);
-      } catch (e) {
-        console.error("❌ Failed to save image to Firestore", e);
-      }
-    }
-  }, captureInterval);
-};
+        const result = await response.json();
 
+        if (result.verified) {
+          await addDoc(collection(db, "users", user.uid, "face_datasets"), {
+            image: base64Image,
+            timestamp: new Date(),
+          });
+
+          count++;
+          setCapturedCount(count);
+          setProgress(Math.floor((count / totalImages) * 100));
+          console.log(`📸 Saved ${count}/${totalImages}`);
+
+          if (count >= totalImages && !isFinished) {
+            isFinished = true;
+            clearInterval(timer);
+            stream.getTracks().forEach((track) => track.stop());
+            alert("✅ Face Images Gathered Successfully! Please Log in.");
+            navigate("/");
+          }
+        } else {
+          console.log("⚠️ No face detected. Skipping frame.");
+        }
+      } catch (e) {
+        console.error("❌ Error verifying/saving image:", e);
+      }
+    }, captureInterval);
+  };
 
   useEffect(() => {
     if (videoRef.current && !isCapturing) {
@@ -167,14 +144,12 @@ export default function FaceRegistration({ user, darkMode, toggleDarkMode }) {
         )}
 
         {isCapturing && (
-          <>
-            <div className="mt-6 w-full bg-gray-300 rounded-full h-4">
-              <div
-                className="bg-green-500 h-4 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-          </>
+          <div className="mt-6 w-full bg-gray-300 rounded-full h-4">
+            <div
+              className="bg-green-500 h-4 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
         )}
       </div>
     </div>

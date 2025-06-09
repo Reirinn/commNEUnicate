@@ -3,8 +3,6 @@ import { db } from "../firebase";
 import {
   collection,
   addDoc,
-  doc,
-  setDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import axios from "axios";
@@ -14,9 +12,8 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
   const [tracking, setTracking] = useState(false);
   const [intervalId, setIntervalId] = useState(null);
   const [trackingMessage, setTrackingMessage] = useState("");
-  const sessionIdRef = useRef(null); 
+  const sessionIdRef = useRef(null);
 
-  
   const knownEmails = new Set([
     "joe.dominguez@neu.edu.ph",
     "johnjohan.sanjuan@neu.edu.ph",
@@ -100,7 +97,7 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
       setTracking(true);
       setTrackingMessage("📸 Attendance Tracking in progress...");
       forceOpenCameraAndTrack();
-    }, 120000); 
+    }, 120000); // every 2 minutes
 
     setIntervalId(id);
   };
@@ -127,9 +124,11 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
 
-        const recognizedEmails = new Set();
+        let alreadyLogged = false;
 
         const captureLoop = setInterval(async () => {
+          if (alreadyLogged) return;
+
           canvas.width = video.videoWidth || 640;
           canvas.height = video.videoHeight || 480;
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -142,7 +141,6 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
             });
 
             const recognizedFaces = response.data.faces;
-
             const usersColRef = collection(
               db,
               "attendance",
@@ -152,67 +150,43 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
               "users"
             );
 
-            if (!recognizedFaces || recognizedFaces.length === 0) {
-              if (knownEmails.has(userEmail)) {
-                await addDoc(usersColRef, {
-                  email: userEmail,
-                  name: userName,
-                  attendanceStatus: "In meeting but not properly recognized",
-                  timestamp: serverTimestamp(),
-                });
-                console.log("Logged: In meeting but not properly recognized");
+            let userStatus = "In meeting but not recognized"; // default
+
+            if (recognizedFaces && recognizedFaces.length > 0) {
+              const matchedFace = recognizedFaces.find(
+                (face) => face.email === userEmail
+              );
+
+              if (matchedFace) {
+                userStatus = "Present";
+                console.log("✅ Recognized and email matched — Present");
+              } else if (knownEmails.has(userEmail)) {
+                userStatus = "In meeting but not properly recognized";
+                console.log("⚠️ Recognized someone else — not properly recognized");
               } else {
-                await addDoc(usersColRef, {
-                  email: userEmail,
-                  name: userName,
-                  attendanceStatus: "In meeting but not recognized",
-                  timestamp: serverTimestamp(),
-                });
-                console.log("Logged: In meeting but not recognized");
+                userStatus = "In meeting but not recognized";
+                console.log("❌ Recognized but email mismatch — not recognized");
               }
+            } else if (knownEmails.has(userEmail)) {
+              userStatus = "In meeting but not properly recognized";
+              console.log("⚠️ No recognition — not properly recognized");
             } else {
-              let userRecognized = false;
-
-              for (const face of recognizedFaces) {
-                if (face.email === userEmail) {
-                  userRecognized = true;
-                  if (!recognizedEmails.has(face.email)) {
-                    recognizedEmails.add(face.email);
-                    await addDoc(usersColRef, {
-                      email: face.email,
-                      name: face.name,
-                      attendanceStatus: "Present",
-                      timestamp: serverTimestamp(),
-                    });
-                    console.log("Logged: Present");
-                  }
-                }
-              }
-
-              if (!userRecognized) {
-                if (knownEmails.has(userEmail)) {
-                  await addDoc(usersColRef, {
-                    email: userEmail,
-                    name: userName,
-                    attendanceStatus: "In meeting but not properly recognized",
-                    timestamp: serverTimestamp(),
-                  });
-                  console.log("Logged: In meeting but not properly recognized");
-                } else {
-                  await addDoc(usersColRef, {
-                    email: userEmail,
-                    name: userName,
-                    attendanceStatus: "In meeting but not recognized",
-                    timestamp: serverTimestamp(),
-                  });
-                  console.log("Logged: In meeting but not recognized");
-                }
-              }
+              userStatus = "In meeting but not recognized";
+              console.log("❌ No recognition — not recognized");
             }
+
+            await addDoc(usersColRef, {
+              email: userEmail,
+              name: userName,
+              attendanceStatus: userStatus,
+              timestamp: serverTimestamp(),
+            });
+
+            alreadyLogged = true;
           } catch (error) {
             console.error("Recognition error:", error);
           }
-        }, 3000); 
+        }, 3000); // every 3s
 
         setTimeout(() => {
           clearInterval(captureLoop);
@@ -220,8 +194,8 @@ export default function JitsiMeeting({ roomName, userName, userEmail, userRole }
           video.remove();
           setTracking(false);
           setTrackingMessage("");
-          console.log("Stopped attendance tracking for this session.");
-        }, 15000);
+          console.log("🛑 Stopped tracking for this cycle.");
+        }, 15000); // stop after 15s
       })
       .catch((err) => {
         console.error("Camera access error:", err);
