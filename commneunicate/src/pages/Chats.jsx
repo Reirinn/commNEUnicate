@@ -28,12 +28,12 @@ export default function Chats({ userRole, darkMode }) {
   const [searchResults, setSearchResults] = useState([]);
   const [userProfiles, setUserProfiles] = useState({});
   const [loading, setLoading] = useState(true);
-  const [file, setFile] = useState(null); // For storing the selected file
-  const [fileUrl, setFileUrl] = useState(""); // File URL for sending
-  const [uploading, setUploading] = useState(false); // For managing the upload state
-  const [fileProgress, setFileProgress] = useState(0); // For tracking upload progress
+  const [file, setFile] = useState(null); 
+  const [fileUrl, setFileUrl] = useState(""); 
+  const [uploading, setUploading] = useState(false); 
+  const [fileProgress, setFileProgress] = useState(0); 
 
-  const fileInputRef = useRef(null); // Reference to the file input
+  const fileInputRef = useRef(null); 
 
   const currentUser = auth.currentUser;
 
@@ -96,7 +96,7 @@ export default function Chats({ userRole, darkMode }) {
     return () => unsubscribe();
   }, [selectedChat]);
 
-  // Reset file and fileUrl states when switching chats or sending the message
+  
   const resetFileState = () => {
     setFile(null);
     setFileUrl("");
@@ -106,23 +106,23 @@ export default function Chats({ userRole, darkMode }) {
 
   const goToChat = (chat) => {
     setSelectedChat(chat);
-    resetFileState(); // Reset file state when switching to a different chat
+    resetFileState(); 
   };
 
-  // Handle file change (file input)
+  
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
 
-    // Show file preview or file name
+    
     setFile(selectedFile);
-    setFileUrl(URL.createObjectURL(selectedFile)); // For preview if it's an image
+    setFileUrl(URL.createObjectURL(selectedFile)); 
 
-    // Start file upload to Firebase Storage
+    
     const fileRef = ref(storage, `chats/${selectedChat.id}/${selectedFile.name}`);
     const uploadTask = uploadBytesResumable(fileRef, selectedFile);
 
-    // Set uploading state to true
+    
     setUploading(true);
 
     uploadTask.on(
@@ -137,8 +137,8 @@ export default function Chats({ userRole, darkMode }) {
       },
       async () => {
         const downloadURL = await getDownloadURL(uploadTask.snapshot.ref());
-        setFileUrl(downloadURL); // Set the file URL after upload completion
-        setUploading(false); // End uploading
+        setFileUrl(downloadURL); 
+        setUploading(false); 
       }
     );
   };
@@ -154,14 +154,14 @@ export default function Chats({ userRole, darkMode }) {
         timestamp: serverTimestamp(),
       };
 
-      // If there's a file (image or document), include the file URL in the message
+      
       if (fileUrl) {
         messageData.fileUrl = fileUrl;
         messageData.fileName = file.name;
-        setFile(null); // Reset the file after sending
+        setFile(null); 
       }
 
-      // Send the message with the file (if any)
+      
       await addDoc(collection(db, "chats", selectedChat.id, "messages"), messageData);
       const chatDocRef = doc(db, "chats", selectedChat.id);
       await updateDoc(chatDocRef, {
@@ -172,7 +172,7 @@ export default function Chats({ userRole, darkMode }) {
       });
 
       setNewMessage("");
-      resetFileState(); // Reset the file state after sending the message
+      resetFileState(); 
     } catch (error) {
       console.error("Error sending message:", error);
     }
@@ -387,32 +387,24 @@ export default function Chats({ userRole, darkMode }) {
 
                   {/* If there's a file URL, display it inside the bubble */}
                   {msg.fileUrl && (
-                    <div className="mt-2">
-                      {/* If it's an image, show it as an image */}
-                      {msg.fileUrl.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
-                        <img
-                          src={msg.fileUrl}
-                          alt={msg.fileName || "Sent image"}
-                          className="w-48 max-h-48 object-contain rounded shadow"
-                        />
-                      ) : (
-                        <div>
-                          <p className="text-sm font-medium">📄 {msg.fileName || "Download file"}</p>
-                        </div>
-                      )}
-
-                      {/* Download link for all files */}
-                      <a
-                        href={msg.fileUrl}
-                        download={msg.fileName || "file"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-300 underline text-sm mt-1 inline-block"
-                      >
-                        ⬇️ Download
-                      </a>
+                     <div className="mt-2">
+                        {msg.fileUrl.includes("image") ? (
+                          <img
+                             src={msg.fileUrl}
+                             alt={msg.fileName}
+                             className="max-w-xs max-h-40 object-contain rounded-lg"
+                          />
+                        ) : (
+                          <a
+                            href={msg.fileUrl}
+                            download={msg.fileName}  
+                            className={`text-sm ${darkMode ? "text-blue-300" : "text-blue-600"}`}
+                          >
+                           📁 {msg.fileName}  
+                          </a>
+                        )}
                     </div>
-                  )}
+                    )}
                 </div>
               ))}
             </div>
@@ -428,7 +420,7 @@ export default function Chats({ userRole, darkMode }) {
               {/* File input with a button to trigger the file picker */}
               <input
                 type="file"
-                accept="image/*, .pdf, .docx, .txt"
+                accept="image/*, .pdf, .docx, .txt, .xlsx, .xls, .keras, .ipynb, .csv, .zip, .rar, .7z, .tar, .gz, .mp3, .wav, .mp4, .avi, .mov, .json, .xml, .py, .html, .js, .css, .md, .psd, .ai, .epub, .mobi, .db"
                 onChange={handleFileChange}
                 className="hidden"
                 ref={fileInputRef}
